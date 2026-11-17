@@ -15,6 +15,14 @@ Appli piano gratuite (PWA + APK Android) : apprends du premier Do jusqu'à tes m
 - **Import MusicXML / MIDI** (`.mxl`, `.musicxml`, `.mid`) et morceaux écrits en texte ; apprentissage guidé d'un morceau (main droite → gauche → ensemble → tempo).
 - **Hors ligne** une fois installée. Réglages : entrée micro/MIDI, noms de notes (Do Ré Mi / C D E), décalage, recalibrage du micro.
 
+## Programme personnalisé
+Dans « Mes morceaux », le bouton **🎯 Objectif** crée un programme pour apprendre un morceau avant une date limite (raccourcis 2 semaines / 1 mois / 3 mois, minutes par jour, jours de la semaine).
+- **Analyse** du morceau (`songplan.js`) : découpe en phrases de 2 à 8 mesures, difficulté par phrase, temps de travail estimé, et verdict de faisabilité honnête (réaliste / serré / irréaliste, avec suggestions : plus de minutes, date plus tardive, ou ne garder que le début du morceau).
+- **Calendrier** : chaque phrase est travaillée main par main, puis à deux mains, puis à 60 / 80 / 100 % du tempo, avec des révisions espacées et un passage complet la veille. Le temps prévu tient compte du niveau mesuré du joueur (`skill.js`, stocké dans `sp.skill`).
+- **Adaptation** : après chaque tentative (et à chaque nouveau jour) le calendrier est recalculé depuis la progression réelle. En retard, la phrase non maîtrisée est rallongée au lieu de passer à la suite ; en avance, la date de fin estimée recule. Une étape est validée par 2 tentatives consécutives réussies.
+- **Accueil** : carte « 🎯 Programme » (date limite, progression, statut, tâches du jour avec bouton « Jouer » qui lance la bonne phrase, les bonnes mains et la bonne vitesse). Bouton « 🧠 Mon niveau » dans la barre de statut.
+- **Limites** : toutes les formules (difficulté, temps estimé, seuils de maîtrise, modèle de niveau) sont des **heuristiques non validées sur de vrais élèves** ; seule la cohérence interne est testée (`test-skill.mjs`, `test-songplan.mjs`, `test-goals.mjs`). Un seul programme actif par morceau ; données locales à l'appareil (pas de synchronisation, pas de classement entre joueurs).
+
 ## Installer l'APK Android
 GitHub → onglet **Actions** → workflow **« Build PianoFlow APK »** → dernier run réussi → artefact **`PianoFlow-apk`** (zip contenant `app-debug.apk`). Dézippe, copie sur le téléphone, autorise l'installation de sources inconnues. C'est un APK de debug (non signé pour le Play Store).
 

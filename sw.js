@@ -1,5 +1,5 @@
-const V = 'pianoflow-v20';
-const FILES = ['./', 'index.html', 'app.js', 'parsers.js', 'songs.js', 'curriculum.js', 'learn.js', 'chords.js', 'train.js', 'reading.js', 'ear.js', 'stats.js', 'synth.js', 'accomp.js', 'notify.js', 'placement.js', 'mic.js', 'style.css', 'manifest.json', 'icon.svg'];
+const V = 'pianoflow-v21';
+const FILES = ['./', 'index.html', 'app.js', 'parsers.js', 'songs.js', 'curriculum.js', 'learn.js', 'chords.js', 'train.js', 'reading.js', 'ear.js', 'stats.js', 'synth.js', 'accomp.js', 'notify.js', 'placement.js', 'mic.js', 'skill.js', 'songplan.js', 'goals.js', 'drills.js', 'mylevel.js', 'style.css', 'manifest.json', 'icon.svg'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== V && k !== 'share').map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 // réseau d'abord (pour recevoir les mises à jour), cache en secours (hors ligne)

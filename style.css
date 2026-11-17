@@ -81,3 +81,5 @@ button,.btn{min-height:48px}
 #prefs{position:fixed;inset:0;background:rgba(5,7,20,.78);display:flex;align-items:flex-end;justify-content:center;z-index:10}#prefs[hidden]{display:none}
 .wk{fill:#fff;stroke:#333}.bk{fill:#111}.wk.hint{fill:#fde68a}.bk.hint{fill:#b45309}.wk.on{fill:var(--acc)}.bk.on{fill:#0369a1}
 select,textarea,input[type=text],input[type=number],input[type=time],input[type=search]{min-height:44px}
+
+.stuck{margin:12px 0 0;text-align:left;font-size:15px;color:var(--mut)}.stuck ul{margin:6px 0 0;padding-left:20px}.stuck strong{color:var(--fg,inherit)}
