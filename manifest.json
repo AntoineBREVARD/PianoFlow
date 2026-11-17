@@ -10,6 +10,38 @@
   "theme_color": "#0b0e22",
   "lang": "fr",
   "icons": [
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
-  ]
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "share_target": {
+    "action": "share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "score",
+          "accept": [
+            "audio/midi",
+            "audio/mid",
+            "audio/x-midi",
+            ".mid",
+            ".midi",
+            ".mxl",
+            ".musicxml",
+            ".xml",
+            "application/vnd.recordare.musicxml",
+            "application/vnd.recordare.musicxml+xml",
+            "application/xml",
+            "text/xml",
+            "application/octet-stream"
+          ]
+        }
+      ]
+    }
+  }
 }

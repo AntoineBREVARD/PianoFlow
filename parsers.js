@@ -18,7 +18,7 @@ export function finalize(song) {
   if (!raw.length) throw new Error('Aucune note trouvée dans ce fichier.');
   raw.sort((a, b) => a.s - b.s || a.m - b.m);
   const t0 = raw[0].s;
-  const notes = raw.map(n => [n.m, round(n.s - t0), Math.max(0.1, round(n.d)), n.h]);
+  const notes = raw.map(n => [n.m, round(n.s - t0), Math.max(0.1, round(n.d)), n.h, ...(n.f ? [n.f] : [])]);
   const tempos = (song.tempos || []).map(([b, v]) => [round(Math.max(0, b - t0)), Math.round(v)]);
   const out = { title: song.title, bpm: Math.round(tempos[0]?.[1] || song.bpm || 100), notes };
   if (tempos.length > 1) out.tempos = tempos;

@@ -4,12 +4,14 @@ import { finalize } from './parsers.js';
 const N = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 export function seq(str, h) {
   const out = []; let t = 0;
-  for (const tok of str.replace(/\|/g, ' ').trim().split(/\s+/)) {
+  for (const tok0 of str.replace(/\|/g, ' ').trim().split(/\s+/).filter(Boolean)) {
+    // syntaxe : NOTE[+NOTE][:durée][^doigt[+doigt]]   ex : C3+G3:4^5+1
+    const [tok, fin] = tok0.split('^'); const fs = fin ? fin.split('+').map(Number) : [];
     const [pitches, dur = '1'] = tok.split(':'); const d = parseFloat(dur);
-    if (pitches !== 'R') for (const p of pitches.split('+')) {
+    if (pitches !== 'R') pitches.split('+').forEach((p, i) => {
       const m = /^([A-G])([#b]?)(-?\d)$/.exec(p); if (!m) throw new Error('note ' + p);
-      out.push({ m: (+m[3] + 1) * 12 + N[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0), s: t, d, h });
-    }
+      out.push({ m: (+m[3] + 1) * 12 + N[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0), s: t, d, h, f: fs[i] });
+    });
     t += d;
   }
   return out;

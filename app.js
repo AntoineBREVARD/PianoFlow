@@ -1,5 +1,6 @@
 import { parseFile } from './parsers.js';
 import { DEMOS, compose } from './songs.js';
+import * as learn from './learn.js';
 
 const $ = s => document.querySelector(s);
 const NAMES = ['Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'];
@@ -72,19 +73,39 @@ function renderHome() {
     list.append(li);
   }
 }
-$('#file').onchange = async e => {
-  const msg = $('#importMsg'); msg.textContent = '';
-  for (const f of e.target.files) {
+async function importFiles(files) {
+  const msg = $('#importMsg'); msg.textContent = ''; let last = null;
+  for (const f of files) {
     try {
       const song = await parseFile(f);
       song.id = 'u' + Date.now() + Math.random().toString(36).slice(2, 6);
-      library.unshift(song);
+      library.unshift(song); last = song;
       msg.textContent += `✓ ${song.title} (${song.notes.length} notes)\n`;
     } catch (err) { msg.textContent += `✗ ${f.name} : ${err.message}\n`; }
   }
   if (!store.set('sp.library', library)) msg.textContent += '⚠ Stockage plein : la partition ne sera pas gardée après fermeture.\n';
-  e.target.value = ''; renderHome();
-};
+  renderHome();
+  if (last && files.length === 1) { learn.refresh(); document.querySelector('[data-tab=songs]').click(); openSetup(last); }
+}
+$('#file').onchange = async e => { await importFiles([...e.target.files]); e.target.value = ''; };
+function doSearch(kind) {
+  const q = $('#q').value.trim(); if (!q) { $('#q').focus(); return; }
+  const url = kind === 'midi' ? 'https://www.google.com/search?q=' + encodeURIComponent(q + ' midi piano télécharger')
+    : 'https://musescore.com/sheetmusic?text=' + encodeURIComponent(q);
+  window.open(url, '_blank', 'noopener');
+}
+$('#qMidi').onclick = () => doSearch('midi'); $('#qMs').onclick = () => doSearch('ms');
+$('#q').onkeydown = e => { if (e.key === 'Enter') doSearch('midi'); };
+// Partage depuis une autre appli (Fichiers, Téléchargements…) vers PianoFlow (PWA installée)
+(async () => {
+  if (!/[?&]shared=1/.test(location.search) || !('caches' in window)) return;
+  try {
+    const c = await caches.open('share'), files = [];
+    for (const rq of await c.keys()) { const r = await c.match(rq); files.push(new File([await r.blob()], decodeURIComponent(rq.url.split('/').pop()))); await c.delete(rq); }
+    history.replaceState(null, '', location.pathname);
+    if (files.length) importFiles(files);
+  } catch { }
+})();
 
 $('#newSong').onclick = () => { $('#c_msg').textContent = ''; $('#composer').hidden = false; };
 $('#c_cancel').onclick = () => { $('#composer').hidden = true; };
@@ -106,15 +127,20 @@ function openSetup(song) {
 }
 $('#s_speed').oninput = e => { $('#speedVal').textContent = Math.round(e.target.value * 100) + ' %'; };
 $('#setupCancel').onclick = () => { $('#setup').hidden = true; };
+$('#setupGuided').onclick = () => { $('#setup').hidden = true; learn.guided(setupSong); };
 $('#setupGo').onclick = async () => {
   for (const k of ['mode', 'hands', 'input']) settings[k] = $('#s_' + k).value;
   settings.speed = +$('#s_speed').value; settings.names = $('#s_names').checked;
   store.set('sp.settings', settings);
   $('#setup').hidden = true;
-  audio(); // geste utilisateur : débloque le son
-  const err = await startInputs();
-  startGame(setupSong, err);
+  begin(setupSong);
 };
+// démarre une partie (débloque le son, ouvre micro/MIDI si besoin)
+async function begin(song, opts) {
+  audio();
+  const err = await startInputs();
+  startGame(song, err, opts);
+}
 
 /* ============================ Entrées : micro & MIDI ============================ */
 let micStream = null, analyser = null, midiAccess = null;
@@ -180,23 +206,26 @@ function expectedNow() {
 }
 
 /* ============================ Jeu ============================ */
-function startGame(song, warning) {
-  const notes = song.notes.map(([m, s, d, h]) => ({ m, s, d, h, hit: 0, miss: false, req: false }));
+function startGame(song, warning, opts = {}) {
+  const o = { mode: settings.mode, hands: settings.hands, speed: settings.speed, ...opts };
+  let src = song.notes;
+  if (o.from != null) { src = src.filter(n => n[1] >= o.from - 1e-6 && n[1] < o.to - 1e-6); if (!src.length) src = song.notes; }
+  const notes = src.map(([m, s, d, h, f]) => ({ m, s, d, h, f, hit: 0, miss: false, req: false }));
   notes.sort((a, b) => a.s - b.s || a.m - b.m);
-  notes.forEach(n => { n.req = settings.mode !== 'demo' && (settings.hands === 'both' || settings.hands === n.h); });
-  if (!notes.some(n => n.req) && settings.mode !== 'demo') notes.forEach(n => { n.req = true; });
+  notes.forEach(n => { n.req = o.mode !== 'demo' && (o.hands === 'both' || o.hands === n.h); });
+  if (!notes.some(n => n.req) && o.mode !== 'demo') notes.forEach(n => { n.req = true; });
   let lo = Math.min(...notes.map(n => n.m)), hi = Math.max(...notes.map(n => n.m));
   while (isBlack(lo)) lo--; while (isBlack(hi)) hi++;
   while (hi - lo < 23) { if (hi < 108) hi++; if (hi - lo < 23 && lo > 21) lo--; }
   while (isBlack(lo)) lo--; while (isBlack(hi)) hi++;
   const req = notes.filter(n => n.req);
   G = {
-    song, notes, req, lo, hi, mode: settings.mode, sp: settings.speed,
+    song, notes, req, lo, hi, mode: o.mode, sp: o.speed, opts: o, secs: 0,
     t: notes[0].s - 3, gi: 0, mi: 0, ai: 0, end: Math.max(...notes.map(n => n.s + n.d)),
     total: req.length, hits: 0, wrong: 0, missed: 0, streak: 0, best: 0, paused: false, last: performance.now(), flash: null, mic: settings.input === 'mic',
   };
   $('#home').hidden = true; $('#result').hidden = true; $('#game').hidden = false;
-  $('#pause').hidden = true; $('#hudTitle').textContent = song.title;
+  $('#pause').hidden = true; $('#hudTitle').textContent = o.label || song.title;
   resize();
   if (warning) flash(warning, '#fbbf24', 3500);
   try { navigator.wakeLock?.request('screen').catch(() => { }); } catch { }
@@ -242,15 +271,19 @@ function finish() {
   const g = G; G = null; stopMic(); pressed.clear();
   held.forEach(v => v.off()); held.clear();
   $('#game').hidden = true;
-  if (g.mode === 'demo') { $('#home').hidden = false; return; }
+  if (g.mode === 'demo') { $('#home').hidden = false; learn.refresh(); return; }
   const score = Math.max(0, g.hits - g.wrong * 0.5) / Math.max(1, g.total);
   const stars = score >= 0.95 ? 3 : score >= 0.8 ? 2 : score >= 0.5 ? 1 : 0;
+  learn.onTime(g.secs);
+  const next = g.opts.onDone?.({ stars, score, hits: g.hits, total: g.total, wrong: g.wrong, secs: g.secs });
+  $('#next').hidden = !next?.run; $('#hint').textContent = next?.hint || '';
+  if (next?.run) { $('#next').textContent = next.label; $('#next').onclick = () => { $('#result').hidden = true; $('#home').hidden = false; learn.refresh(); next.run(); }; }
   $('#stars').textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
-  $('#resTitle').textContent = g.song.title;
+  $('#resTitle').textContent = g.opts.label || g.song.title;
   $('#resStats').textContent = `${g.hits}/${g.total} notes justes · ${g.wrong} fausses · série max ${g.best}`;
   $('#result').hidden = false;
-  $('#again').onclick = () => startGame(g.song);
-  $('#toMenu').onclick = () => { $('#result').hidden = true; $('#home').hidden = false; };
+  $('#again').onclick = () => { $('#result').hidden = true; begin(g.song, g.opts); };
+  $('#toMenu').onclick = () => { $('#result').hidden = true; $('#home').hidden = false; learn.refresh(); };
 }
 
 /* ----- saisie ----- */
@@ -353,7 +386,7 @@ function draw() {
     const yb = hitY - (n.s - G.t) * ppb, yt = hitY - (n.s + n.d - G.t) * ppb;
     if (yb < -4 || yt > hitY) continue;
     const r = G.keys.get(n.m); if (!r) continue;
-    const bh = Math.max(yb - yt, 20), top = yb - bh;
+    const bh = Math.max(yb - yt - 8, 20), top = yb - bh;
     const bw = isBlack(n.m) ? r.w * 0.9 : r.w * 0.84, bx = r.x + (r.w - bw) / 2;
     let c = COL[n.h] || COL.R;
     let fill = c[0];
@@ -361,7 +394,11 @@ function draw() {
     ctx.globalAlpha = n.hit && G.mode !== 'demo' ? Math.max(0.25, 1 - (G.t - n.s) * 1.5) : 1;
     ctx.fillStyle = fill; rr(bx, top, bw, bh - 2, 6); ctx.fill();
     ctx.globalAlpha = 1;
-    if (settings.names && bw > 16 && bh > 18) {
+    if (n.f && bh >= 20 && bw > 14) {
+      ctx.fillStyle = 'rgba(255,255,255,.92)'; ctx.beginPath(); ctx.arc(bx + bw / 2, top + 12, 9, 0, 7); ctx.fill();
+      ctx.fillStyle = '#0b0e22'; ctx.font = '700 12px system-ui'; ctx.textAlign = 'center'; ctx.fillText(n.f, bx + bw / 2, top + 16.5);
+    }
+    if (settings.names && bw > 16 && bh > (n.f ? 44 : 18)) {
       ctx.fillStyle = 'rgba(0,0,0,.75)'; ctx.font = `600 ${Math.min(13, bw * 0.5)}px system-ui`; ctx.textAlign = 'center';
       ctx.fillText(NAMES[n.m % 12], bx + bw / 2, yb - 8);
     }
@@ -399,14 +436,15 @@ let micFrame = 0;
 function loop(now) {
   if (!G) return;
   const dt = Math.min(0.1, (now - G.last) / 1000); G.last = now;
-  if (!G.paused) { update(dt); if (G && ++micFrame % 3 === 0) micTick(); }
+  if (!G.paused) { G.secs += dt; update(dt); if (G && ++micFrame % 3 === 0) micTick(); }
   if (G) { draw(); requestAnimationFrame(loop); }
 }
 
 $('#pauseBtn').onclick = () => { G.paused = true; $('#pause').hidden = false; };
 $('#resume').onclick = () => { G.paused = false; G.last = performance.now(); $('#pause').hidden = true; };
-$('#quit').onclick = () => { const mode = G.mode; G.mode = 'demo'; G.paused = false; $('#pause').hidden = true; G.t = Infinity; $('#home').hidden = false; $('#game').hidden = true; G = null; stopMic(); held.forEach(v => v.off()); held.clear(); pressed.clear(); };
+$('#quit').onclick = () => { learn.onTime(G.secs); learn.refresh(); G.mode = 'demo'; G.paused = false; $('#pause').hidden = true; G.t = Infinity; $('#home').hidden = false; $('#game').hidden = true; G = null; stopMic(); held.forEach(v => v.off()); held.clear(); pressed.clear(); };
 
 renderHome();
+learn.init({ store, begin });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
 window.__sp = { get G() { return G; }, press, startGame, settings, library: () => library };
