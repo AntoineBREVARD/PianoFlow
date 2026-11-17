@@ -11,6 +11,7 @@ const fromDemo = (id, title, intro, demoTitle, extra = {}) => ({ id, title, intr
 
 export const LEVELS = [
   { title: 'Niveau 1 · Premiers pas', lessons: [
+    L('1-0', 'Repère-toi sur le clavier', "Pas besoin de savoir lire une partition ! Les notes tombent vers le clavier : tu joues la touche qui s'allume quand la note arrive en bas. Pour te repérer, regarde les touches noires : par groupes de 2 et de 3. Le Do est juste à gauche d'un groupe de 2, le Fa juste à gauche d'un groupe de 3.", 'C4:2^1 F4:2^1 | C4:2^1 F4:2^1', null, 60),
     L('1-1', 'Trouve le Do', "Le Do se trouve juste à gauche d'un groupe de deux touches noires. Joue-le avec le pouce (1) de la main droite. Les notes tombent : joue la touche quand elle arrive en bas — le morceau t'attend.", 'C4:1^1 C4^1 C4^1 C4^1 | C4:2^1 C4:2^1', null, 70),
     L('1-2', 'Do – Ré – Mi', "Trois doigts, trois notes : pouce (1) sur Do, index (2) sur Ré, majeur (3) sur Mi. Garde la main détendue, doigts arrondis.", 'C4^1 D4^2 E4^3 | E4^3 D4^2 C4^1 | C4^1 D4^2 E4^3 D4^2 | C4:2^1', null, 70),
     L('1-3', 'Les cinq doigts', "Un doigt par touche : Do Ré Mi Fa Sol, du pouce à l'auriculaire. C'est la « position de base » de la main droite.", 'C4^1 D4^2 E4^3 F4^4 G4^5 | G4^5 F4^4 E4^3 D4^2 C4:2^1', null, 70),
