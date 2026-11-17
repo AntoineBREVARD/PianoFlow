@@ -2,7 +2,7 @@
 import { LEVELS, ALL } from './curriculum.js';
 
 const $ = s => document.querySelector(s);
-let H = null, progress = {}, plan = null, days = {}, guidedP = {};
+let planAsked = false, H = null, progress = {}, plan = null, days = {}, guidedP = {};
 const dkey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const DOW = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
 const ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -20,7 +20,6 @@ export function init(host) {
   document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => tab(b.dataset.tab));
   $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
   tab(H.store.get('sp.tab', 'today'));
-  if (!plan) planEditor(true);
 }
 export function refresh() { renderToday(); renderCourse(); }
 export function onTime(secs) {
@@ -40,7 +39,7 @@ function modal(html) { $('#modalBody').innerHTML = html; $('#modal').hidden = fa
 function closeModal() { $('#modal').hidden = true; }
 const stars = l => progress[l.id]?.stars || 0;
 const done = l => stars(l) >= 1;
-const unlocked = i => !plan || i <= (plan.start || 0) || !!progress[ALL[i].id] || (i > 0 && done(ALL[i - 1]));
+const unlocked = i => i <= (plan?.start || 0) || !!progress[ALL[i].id] || (i > 0 && done(ALL[i - 1]));
 const starStr = n => '★'.repeat(n) + '☆'.repeat(3 - n);
 const scheduled = date => plan?.days.includes(date.getDay());
 const validated = key => (days[key]?.sec || 0) >= plan.minutes * 60 * 0.7;
@@ -80,13 +79,35 @@ function session() {
   return items;
 }
 function renderToday() {
-  const el = $('#tab-today'); if (!plan) { el.innerHTML = ''; return; }
+  const el = $('#tab-today'); if (!plan) {
+    const l = ALL.find(x => !done(x));
+    if (!l) { planEditor(true); return; }
+    if (ALL.some(done)) { if (!planAsked) { planAsked = true; planEditor(true); } }
+    el.innerHTML = `<section class="card hero"><h1>${ALL.some(done) ? 'Bravo, première leçon réussie !' : 'Joue ton premier morceau aujourd\'hui'}</h1>
+      <p>${ALL.some(done) ? 'Crée ton plan pour progresser sans effort.' : 'Pas de solfège, pas d\'abonnement. Suis les notes qui tombent sur le clavier.'}</p>
+      <button id="cta" class="cta">${ALL.some(done) ? '📅 Créer mon plan' : '🎹 Commencer la leçon 1'}</button>
+      <small class="mut">Aucune partition à lire · 3 min</small>
+      <ul class="perks"><li>27 leçons progressives, du premier Do aux morceaux à deux mains</li><li>Importe tes partitions (MIDI, MusicXML) et apprends-les main par main</li><li>Gratuit et hors ligne, sur téléphone, tablette ou avec ton piano USB</li></ul>
+      <p class="hint">🪑 Assieds-toi dos droit, épaules relâchées, poignets souples, doigts arrondis comme si tu tenais une balle. Si ta main serre, fais une pause.</p>
+      <button id="skip" class="ghost">J\'ai déjà des bases</button></section>`;
+    el.querySelector('#cta').onclick = () => ALL.some(done) ? planEditor(true) : startLesson(l, true);
+    el.querySelector('#skip').onclick = () => planEditor(true);
+    return;
+  }
   const key = dkey(), rec = days[key] || { sec: 0, done: [] }, sch = scheduled(new Date());
   const target = plan.minutes * 60, pct = Math.min(100, rec.sec / target * 100);
   const wk = weekDots(), sn = streak();
   const items = session();
   const doneToday = new Set(rec.done);
-  el.innerHTML = `
+  const nxt = ALL.find(l => !done(l)), fresh = !ALL.some(done);
+  const hero = nxt ? `<section class="card hero">
+      <h1>${fresh ? 'Joue ton premier morceau aujourd\'hui' : 'Content de te revoir !'}</h1>
+      <p>${fresh ? 'Pas de solfège, pas d\'abonnement. Suis les notes qui tombent sur le clavier.' : 'Prochaine étape : <b>' + nxt.title + '</b>'}</p>
+      <button id="cta" class="cta" aria-label="${fresh ? 'Commencer la leçon 1' : 'Continuer ma leçon'}">${fresh ? '🎹 Commencer la leçon 1' : '▶ Continuer ma leçon'}</button>
+      <small class="mut">Aucune partition à lire · 3 min</small>
+      ${fresh ? '<ul class="perks"><li>27 leçons progressives, du premier Do aux morceaux à deux mains</li><li>Importe tes partitions (MIDI, MusicXML) et apprends-les main par main</li><li>Gratuit et hors ligne, sur téléphone, tablette ou avec ton piano USB</li></ul><p class="hint">🪑 Assieds-toi dos droit, épaules relâchées, poignets souples, doigts arrondis comme si tu tenais une balle. Si ta main serre, fais une pause.</p>' : '<p class="hint">🌙 Ton cerveau range ce que tu as appris pendant la nuit : 10 minutes aujourd\'hui puis 10 demain valent mieux que 20 d\'un coup.</p>'}
+    </section>` : '';
+  el.innerHTML = hero + `
     <section class="card">
       <div class="streak"><div class="big-n">🔥 ${sn}</div><div>${sn > 1 ? 'jours de suite' : sn === 1 ? 'jour validé' : 'Commence ta série aujourd\'hui !'}<br><small>Cette semaine : ${wk.ok}/${wk.goal} séances</small></div></div>
       <div class="dots">${wk.html}</div>
@@ -110,6 +131,7 @@ function renderToday() {
     li.append(b); ul.append(li);
   });
   el.querySelector('#editPlan').onclick = () => planEditor(false);
+  const cta = el.querySelector('#cta'); if (cta) cta.onclick = () => startLesson(nxt, true);
 }
 
 /* ---------- cours ---------- */

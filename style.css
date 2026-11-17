@@ -60,3 +60,11 @@ textarea,input[type=text],input[type=number],input[type=time],input[type=search]
 .stages li.ok{color:#6ee7b7}.stages li.ok::marker{content:"✓ "}.stages li.cur{color:var(--fg);font-weight:700}
 .searchrow input{margin:0}.searchbtns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
 button:disabled{opacity:.45}
+
+button,.btn{min-height:48px}
+.hero h1{font-size:28px;line-height:1.2;margin:0 0 8px}.hero p{font-size:17px;line-height:1.5;margin:0 0 16px}
+.cta{display:block;width:100%;min-height:72px;font-size:22px;font-weight:700;border-radius:20px;color:#0b0e22;background:linear-gradient(135deg,#38bdf8,#a5b4fc);box-shadow:0 8px 24px #38bdf855;animation:pulse 2.4s ease-in-out infinite;margin-bottom:8px}
+.perks{padding-left:20px;margin:16px 0;line-height:1.5}
+@keyframes pulse{50%{box-shadow:0 8px 36px #38bdf8aa;transform:scale(1.015)}}
+:focus-visible{outline:3px solid #fbbf24;outline-offset:3px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
