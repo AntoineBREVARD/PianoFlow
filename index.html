@@ -2,8 +2,8 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<meta name="theme-color" content="#0b0e22">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0e22" media="(prefers-color-scheme:dark)"><meta name="theme-color" content="#f4f5fb" media="(prefers-color-scheme:light)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg">
@@ -15,11 +15,12 @@
   <header><button id="prefsBtn" class="ghost" aria-label="Réglages" style="float:right">⚙️ Réglages</button><h1>🎹 PianoFlow</h1><p>Apprends le piano, du premier Do jusqu'à tes morceaux préférés. Aucune partition à lire : les notes tombent, tu les suis.</p></header>
   <div id="tab-today" class="tab"></div>
   <div id="tab-course" class="tab" hidden></div>
+  <div id="tab-train" class="tab" hidden></div>
   <div id="tab-songs" class="tab" hidden>
 
   <section class="card">
     <h2>Ajouter le morceau que tu veux</h2>
-    <div class="searchrow"><input id="q" type="search" placeholder="Titre ou artiste…" enterkeyhint="search"></div>
+    <div class="searchrow"><input id="q" type="search" aria-label="Titre ou artiste" placeholder="Titre ou artiste…" enterkeyhint="search"></div>
     <div class="searchbtns"><button id="qMidi" class="primary">Chercher un fichier MIDI</button><button id="qMs" class="ghost">Voir sur MuseScore</button></div>
     <p class="hint">Télécharge le fichier trouvé, puis importe-le ci-dessous — ou, avec l'appli installée, utilise <b>Partager → PianoFlow</b> depuis tes Téléchargements : le morceau s'ajoute tout seul. Ensuite, « Apprendre pas à pas » le découpe en étapes.</p>
   </section>
@@ -52,12 +53,12 @@
     </ul>
   </section>
   </div>
-  <nav id="tabs"><button data-tab="today">🔥<span>Aujourd'hui</span></button><button data-tab="course">🎓<span>Cours</span></button><button data-tab="songs">🎵<span>Morceaux</span></button><button id="tabPrefs">⚙️<span>Réglages</span></button></nav>
+  <nav id="tabs" aria-label="Navigation principale"><button data-tab="today">🔥<span>Aujourd'hui</span></button><button data-tab="course">🎓<span>Cours</span></button><button data-tab="songs">🎵<span>Morceaux</span></button><button data-tab="train">🏋️<span>Entraîner</span></button><button id="tabPrefs">⚙️<span>Réglages</span></button></nav>
 </main>
 
-<section id="modal" hidden><div class="sheet" id="modalBody"></div></section>
+<section id="modal" hidden role="dialog" aria-modal="true"><div class="sheet" id="modalBody"></div></section>
 
-<section id="setup" hidden>
+<section id="setup" hidden role="dialog" aria-modal="true" aria-label="Préparer le morceau">
   <div class="sheet">
     <h2 id="setupTitle"></h2>
     <label>Mode
@@ -78,14 +79,14 @@
       </select>
     </label>
     <button id="s_recal" type="button" class="ghost">Recalibrer le micro</button>
-    <label>Vitesse <b id="speedVal"></b><input id="s_speed" type="range" min="0.3" max="1.3" step="0.05"></label>
+    <label>Vitesse <b id="speedVal"></b><input id="s_speed" type="range" aria-label="Vitesse" min="0.3" max="1.3" step="0.05"></label>
     <label class="row"><input id="s_names" type="checkbox"> Afficher le nom des notes (Do Ré Mi)</label>
     <button id="setupGuided" class="primary" style="width:100%">🎓 Apprendre ce morceau pas à pas</button>
     <div class="actions"><button id="setupCancel" class="ghost">Annuler</button><button id="setupGo" class="ghost">Jouer directement</button></div>
   </div>
 </section>
 
-<section id="prefs" hidden>
+<section id="prefs" hidden role="dialog" aria-modal="true" aria-label="Réglages">
   <div class="sheet">
     <h2>⚙️ Réglages</h2>
     <label>Comment tu joues
@@ -96,14 +97,14 @@
       </select>
     </label>
     <label class="row"><input id="p_names" type="checkbox"> Afficher le nom des notes (Do Ré Mi)</label>
-    <label>Décalage du micro <b id="p_latVal"></b><input id="p_lat" type="range" min="0" max="0.5" step="0.01"></label>
+    <label>Décalage du micro <b id="p_latVal"></b><input id="p_lat" type="range" aria-label="Décalage du micro" min="0" max="0.5" step="0.01"></label>
     <p class="hint">Si les notes sont validées trop tôt ou trop tard avec le micro, augmente ou diminue ce décalage.</p>
     <button id="p_recal" type="button" class="ghost">Recalibrer le micro</button>
     <div class="actions"><button id="p_close" class="primary">Fermer</button></div>
   </div>
 </section>
 
-<section id="composer" hidden>
+<section id="composer" hidden role="dialog" aria-modal="true" aria-label="Écrire un morceau">
   <div class="sheet">
     <h2>Écrire un morceau</h2>
     <label>Titre<input id="c_title" type="text" placeholder="Mon morceau"></label>
@@ -118,16 +119,16 @@
 </section>
 
 <section id="game" hidden>
-  <canvas id="cv"></canvas>
+  <canvas id="cv" role="img" aria-label="Clavier et notes qui tombent"></canvas>
   <div id="hud">
     <button id="pauseBtn" class="ghost" aria-label="Pause">⏸</button>
     <div id="hudMid"><span id="hudTitle"></span><div id="barWrap"><div id="bar"></div></div></div>
-    <span id="hudScore"></span>
+    <span id="hudScore" aria-live="off"></span>
   </div>
-  <div id="pause" hidden><div class="sheet"><h2>Pause</h2><div class="actions"><button id="quit" class="ghost">Quitter</button><button id="resume" class="primary">Reprendre</button></div></div></div>
+  <div id="pause" hidden role="dialog" aria-modal="true" aria-label="Pause"><div class="sheet"><h2>Pause</h2><div class="actions"><button id="quit" class="ghost">Quitter</button><button id="resume" class="primary">Reprendre</button></div></div></div>
 </section>
 
-<section id="result" hidden>
+<section id="result" hidden role="dialog" aria-modal="true" aria-label="Résultat">
   <div class="sheet">
     <div id="stars"></div>
     <h2 id="resTitle"></h2>
