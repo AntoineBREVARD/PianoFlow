@@ -40,6 +40,7 @@ function closeModal() { $('#modal').hidden = true; }
 const stars = l => progress[l.id]?.stars || 0;
 const done = l => stars(l) >= 1;
 const unlocked = i => i <= (plan?.start || 0) || !!progress[ALL[i].id] || (i > 0 && done(ALL[i - 1]));
+const SLEEP = '🌙 Ton cerveau range ce que tu as appris pendant la nuit : 10 minutes aujourd\'hui puis 10 demain valent mieux que 20 d\'un coup.';
 const starStr = n => '★'.repeat(n) + '☆'.repeat(3 - n);
 const scheduled = date => plan?.days.includes(date.getDay());
 const validated = key => (days[key]?.sec || 0) >= plan.minutes * 60 * 0.7;
@@ -173,8 +174,9 @@ function lessonDone(l, s) {
   const d = (days[dkey()] ||= { sec: 0, done: [] }); if (s.stars >= 1 && !d.done.includes(l.id)) d.done.push(l.id);
   H.store.set('sp.progress', progress); H.store.set('sp.days', days);
   const i = ALL.indexOf(l), nx = ALL[i + 1];
-  if (s.stars >= 1 && nx) return { label: 'Leçon suivante : ' + nx.title, run: () => startLesson(nx, true) };
-  if (s.stars < 1) return { hint: 'Il faut au moins ★ pour passer à la suite : réessaie !' };
+  if (s.stars >= 1 && nx) return { label: 'Leçon suivante : ' + nx.title, run: () => startLesson(nx, true), hint: SLEEP };
+  if (s.stars < 1) return { hint: 'Pas de souci, une erreur est une information ! Il faut au moins ★ pour passer à la suite : réessaie, ou ralentis la vitesse.' };
+  return { hint: SLEEP };
 }
 
 /* ---------- plan ---------- */

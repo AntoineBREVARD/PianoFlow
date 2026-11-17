@@ -31,6 +31,7 @@ export const LEVELS = [
   { title: 'Niveau 3 · Mains ensemble', lessons: [
     L('3-1', "L'accord de Do", "Un accord = plusieurs notes en même temps : Do Mi Sol, avec les doigts 5-3-1 à la main gauche.", 'E4:2^3 G4:2^5 | E4:4^3', 'C3+E3+G3:4^5+3+1 | C3+E3+G3:4^5+3+1', 70),
     L('3-2', 'Au clair de la lune · deux mains', "La mélodie à droite, un accompagnement à gauche.", CLAIR_R, 'C3+G3:4 | C3+G3:4 | G2+B2+D3:4 | C3+G3:4', 80),
+    L('3-2b', 'Piano et forte', "Joue la phrase deux fois : d'abord doucement (piano), puis plus fort (forte). Sur l'écran tactile le volume ne change pas, mais avec un piano USB-MIDI la force de ta frappe se ressent : apprends à doser ton toucher.", 'C4^1 D4^2 E4^3 C4^1 | C4^1 D4^2 E4^3 C4^1 | E4^3 F4^4 G4:2^5 | C4^1 D4^2 E4^3 C4^1 | C4^1 D4^2 E4^3 C4^1 | E4^3 F4^4 G4:2^5', null, 80),
     fromDemo('3-3', 'Joyeux anniversaire', "Une mesure à trois temps : compte « 1-2-3 ».", 'Joyeux anniversaire'),
     fromDemo('3-4', 'Frère Jacques', "Les phrases se répètent deux fois : repère-les.", 'Frère Jacques'),
   ] },
