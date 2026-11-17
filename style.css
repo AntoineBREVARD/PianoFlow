@@ -38,3 +38,7 @@ input[type=range]{padding:0}
 #barWrap{height:4px;background:var(--line);border-radius:2px;margin-top:4px}
 #bar{height:100%;width:0;background:var(--acc);border-radius:2px}
 #hudScore{font-weight:700;font-variant-numeric:tabular-nums;background:rgba(21,26,58,.7);padding:6px 10px;border-radius:10px}
+.links li{flex-direction:column;align-items:flex-start;gap:0}
+a{color:var(--acc)}code{background:var(--bg);padding:1px 5px;border-radius:5px}
+textarea,input[type=text],input[type=number]{display:block;width:100%;margin-top:6px;font:15px ui-monospace,monospace;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px}
+#composer{position:fixed;inset:0;background:rgba(5,7,20,.78);display:flex;align-items:flex-end;justify-content:center;z-index:10}

@@ -19,7 +19,10 @@ export function finalize(song) {
   raw.sort((a, b) => a.s - b.s || a.m - b.m);
   const t0 = raw[0].s;
   const notes = raw.map(n => [n.m, round(n.s - t0), Math.max(0.1, round(n.d)), n.h]);
-  return { title: song.title, bpm: Math.round(song.bpm || 100), notes };
+  const tempos = (song.tempos || []).map(([b, v]) => [round(Math.max(0, b - t0)), Math.round(v)]);
+  const out = { title: song.title, bpm: Math.round(tempos[0]?.[1] || song.bpm || 100), notes };
+  if (tempos.length > 1) out.tempos = tempos;
+  return out;
 }
 const round = x => Math.round(x * 1000) / 1000;
 
@@ -34,7 +37,7 @@ export function parseMidi(buf) {
   const nt = v.getUint16(p); p += 2;
   const div = v.getUint16(p); p += 2;
   if (div & 0x8000) throw new Error('MIDI SMPTE non supporté.');
-  let bpm = null, title = '';
+  let bpm = null, title = ''; const tempos = [];
   const tracks = [];
   for (let ti = 0; ti < nt && p < buf.byteLength; ti++) {
     const id = str(4); const len = v.getUint32(p); p += 4;
@@ -49,7 +52,7 @@ export function parseMidi(buf) {
       if (st < 0x80) st = run; else { p++; if (st < 0xf0) run = st; }
       if (st === 0xff) {
         const type = v.getUint8(p++); const l = vlq();
-        if (type === 0x51 && bpm == null) bpm = 60000000 / ((v.getUint8(p) << 16) | (v.getUint8(p + 1) << 8) | v.getUint8(p + 2));
+        if (type === 0x51) { const b = 60000000 / ((v.getUint8(p) << 16) | (v.getUint8(p + 1) << 8) | v.getUint8(p + 2)); if (bpm == null) bpm = b; tempos.push([tick / div, b]); }
         if (type === 0x03 && !title) { let s = ''; for (let i = 0; i < l; i++) s += String.fromCharCode(v.getUint8(p + i)); title = s.trim(); }
         p += l;
       } else if (st === 0xf0 || st === 0xf7) { p += vlq(); }
@@ -74,7 +77,13 @@ export function parseMidi(buf) {
     const mean = avg.reduce((a, b) => a + b, 0) / avg.length;
     tracks.forEach((t, i) => t.forEach(n => raw.push({ ...n, h: avg[i] >= mean ? 'R' : 'L' })));
   } else tracks[0].forEach(n => raw.push({ ...n, h: n.m >= 60 ? 'R' : 'L' }));
-  return { title, bpm, raw };
+  // MIDI joué à la main : regroupe les accords « roulés » (notes à moins de 0.08 temps)
+  raw.sort((a, b) => a.s - b.s);
+  let cs = -9;
+  for (const n of raw) { if (n.s - cs < 0.08) n.s = cs; else cs = n.s; }
+  // tempos dédoublonnés (un par piste)
+  const tm = [...new Map(tempos.sort((a, b) => a[0] - b[0]).map(x => [Math.round(x[0] * 100), x])).values()];
+  return { title, bpm, tempos: tm, raw };
 }
 
 /* ------------------------------ MusicXML ------------------------------ */
@@ -85,50 +94,86 @@ export function parseXml(text) {
   if (doc.querySelector('parsererror')) throw new Error('Fichier MusicXML invalide.');
   if (doc.documentElement.nodeName === 'score-timewise') throw new Error('MusicXML « timewise » non supporté.');
   const title = (doc.querySelector('work-title') || doc.querySelector('movement-title'))?.textContent.trim() || '';
-  let bpm = null;
-  const raw = [];
+  const raw = [], tempos = [];
   [...doc.querySelectorAll('part')].forEach((part, pi) => {
-    let div = 1, t = 0, last = 0;
-    const open = new Map();
-    for (const meas of part.children) {
-      if (meas.nodeName !== 'measure') continue;
-      for (const el of meas.children) {
+    // 1) lecture de chaque mesure (temps relatifs au début de la mesure)
+    let div = 1, ending = null;
+    const meas = [];
+    for (const me of part.children) {
+      if (me.nodeName !== 'measure') continue;
+      const M = { notes: [], tempos: [], len: 0, fwd: false, bwd: false, times: 1, ending: null };
+      let t = 0, last = 0;
+      for (const el of me.children) {
         const q = s => el.querySelector(s);
         const dur = () => (+q('duration')?.textContent || 0) / div;
         switch (el.nodeName) {
           case 'attributes': { const d = q('divisions'); if (d) div = +d.textContent || 1; break; }
-          case 'direction': { const s = q('sound[tempo]'); if (s && bpm == null) bpm = +s.getAttribute('tempo'); break; }
+          case 'direction': { const s = q('sound[tempo]'); if (s) M.tempos.push([t, +s.getAttribute('tempo')]); break; }
+          case 'sound': if (el.getAttribute('tempo')) M.tempos.push([t, +el.getAttribute('tempo')]); break;
+          case 'barline': {
+            const r = q('repeat'); if (r) { if (r.getAttribute('direction') === 'forward') M.fwd = true; else { M.bwd = true; M.times = +r.getAttribute('times') || 1; } }
+            const en = q('ending');
+            if (en) {
+              const type = en.getAttribute('type');
+              if (type === 'start') ending = { nums: en.getAttribute('number').split(/[,\s]+/).map(Number), open: true };
+              else if (ending) ending.close = true;
+            }
+            break;
+          }
           case 'backup': t -= dur(); break;
           case 'forward': t += dur(); break;
           case 'note': {
             if (q('grace')) break;
-            const chord = !!q('chord'), d = dur();
-            const start = chord ? last : t;
-            const p = q('pitch');
+            const chord = !!q('chord'), d = dur(), start = chord ? last : t, p = q('pitch');
             if (p && !q('rest')) {
               const m = (+p.querySelector('octave').textContent + 1) * 12 + STEP[p.querySelector('step').textContent] + (+p.querySelector('alter')?.textContent || 0);
-              const staff = +q('staff')?.textContent || 1;
-              const key = m + '/' + staff;
-              const tieStop = !!q('tie[type="stop"]'), tieStart = !!q('tie[type="start"]');
-              if (tieStop && open.has(key)) {
-                const n = open.get(key); n.d = start + d - n.s;
-                if (!tieStart) open.delete(key);
-              } else {
-                const n = { m, s: start, d, staff };
-                raw.push(n);
-                if (tieStart) open.set(key, n);
-              }
+              M.notes.push({ m, s: start, d, staff: +q('staff')?.textContent || 1, ts: !!q('tie[type="start"]'), te: !!q('tie[type="stop"]') });
             }
             if (!chord) { last = t; t += d; }
             break;
           }
         }
+        M.len = Math.max(M.len, t);
       }
+      // volta : le début de la mesure peut aussi porter <ending> (barline left) — détecté ci-dessus
+      M.ending = ending ? ending.nums : null;
+      if (ending?.close) ending = null;
+      meas.push(M);
+    }
+    // 2) dépliage des reprises
+    const order = []; const done = new Map();
+    let i = 0, start = 0, pass = 1, guard = 0;
+    while (i < meas.length && guard++ < 5000) {
+      const m = meas[i];
+      if (m.fwd && start !== i) { start = i; pass = 1; }
+      if (m.ending && !m.ending.includes(pass)) { i++; continue; }
+      order.push(i);
+      if (m.bwd && (done.get(i) || 0) < m.times) { done.set(i, (done.get(i) || 0) + 1); pass++; i = start; continue; }
+      if (m.bwd) { start = i + 1; pass = 1; }
+      i++;
+    }
+    // 3) mise à plat dans le temps + liaisons
+    let off = 0; const open = new Map();
+    for (const idx of order) {
+      const M = meas[idx];
+      if (pi === 0) M.tempos.forEach(([r, b]) => tempos.push([off + r, b]));
+      for (const n of M.notes) {
+        const key = n.m + '/' + n.staff, s = off + n.s;
+        if (n.te && open.has(key)) {
+          const o = open.get(key); o.d = s + n.d - o.s;
+          if (!n.ts) open.delete(key);
+        } else {
+          const o = { m: n.m, s, d: n.d, staff: n.staff }; raw.push(o);
+          if (n.ts) open.set(key, o);
+        }
+      }
+      off += M.len;
     }
   });
   const staves = raw.some(n => n.staff >= 2);
   raw.forEach(n => { n.h = staves ? (n.staff >= 2 ? 'L' : 'R') : (n.m >= 60 ? 'R' : 'L'); });
-  return { title, bpm, raw };
+  const tm = [...new Map(tempos.sort((a, b) => a[0] - b[0]).map(x => [Math.round(x[0] * 100), x])).values()];
+  return { title, bpm: tm[0]?.[1] ?? null, tempos: tm, raw };
 }
 
 /* ------------------------------ .mxl (zip) ------------------------------ */

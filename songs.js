@@ -2,7 +2,7 @@
 import { finalize } from './parsers.js';
 
 const N = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-function seq(str, h) {
+export function seq(str, h) {
   const out = []; let t = 0;
   for (const tok of str.replace(/\|/g, ' ').trim().split(/\s+/)) {
     const [pitches, dur = '1'] = tok.split(':'); const d = parseFloat(dur);
@@ -13,6 +13,9 @@ function seq(str, h) {
     t += d;
   }
   return out;
+}
+export function compose(title, bpm, rh, lh) {
+  return finalize({ title, bpm, raw: [...seq(rh || '', 'R'), ...(lh ? seq(lh, 'L') : [])] });
 }
 const make = (title, bpm, rh, lh) => ({ id: 'demo-' + title, demo: true, ...finalize({ title, bpm, raw: [...seq(rh, 'R'), ...(lh ? seq(lh, 'L') : [])] }) });
 
@@ -25,4 +28,12 @@ export const DEMOS = [
   make('Frère Jacques', 110,
     'C4 D4 E4 C4 | C4 D4 E4 C4 | E4 F4 G4:2 | E4 F4 G4:2 | G4:.5 A4:.5 G4:.5 F4:.5 E4 C4 | G4:.5 A4:.5 G4:.5 F4:.5 E4 C4 | C4 G3 C4:2 | C4 G3 C4:2',
     'C3:4 | C3:4 | C3:4 | C3:4 | C3:4 | C3:4 | C3:4 | C3:4'),
+  make('Joyeux anniversaire', 100,
+    'G4:.75 G4:.25 | A4 G4 C5 | B4:2 G4:.75 G4:.25 | A4 G4 D5 | C5:2 G4:.75 G4:.25 | G5 E5 C5 | B4 A4 F5:.75 F5:.25 | E5 C5 D5 | C5:3',
+    'R:1 | C3+G3:3 | G2+D3:3 | G2+D3:3 | C3+G3:3 | C3+G3:3 | G2+D3:3 | G2+D3:3 | C3+G3:3'),
+  make('Jingle Bells (refrain)', 120,
+    'E4 E4 E4:2 | E4 E4 E4:2 | E4 G4 C4:1.5 D4:.5 | E4:4 | F4 F4 F4:1.5 F4:.5 | F4 E4 E4 E4:.5 E4:.5 | E4 D4 D4 E4 | D4:2 G4:2',
+    'C3+G3:4 | C3+G3:4 | C3+G3:4 | C3+G3:4 | F2+C3:4 | C3+G3:4 | G2+D3:4 | G2+D3:4'),
+  make('Für Elise (début)', 70,
+    'E5:.25 D#5:.25 E5:.25 D#5:.25 E5:.25 B4:.25 D5:.25 C5:.25 | A4:.5 R:.25 C4:.25 E4:.25 A4:.25 | B4:.5 R:.25 E4:.25 G#4:.25 B4:.25 | C5:.5 R:.25 E4:.25 E5:.25 D#5:.25 | E5:.25 D#5:.25 E5:.25 B4:.25 D5:.25 C5:.25 | A4:.5 R:.25 C4:.25 E4:.25 A4:.25 | B4:.5 R:.25 E4:.25 C5:.25 B4:.25 | A4:1.5'),
 ];

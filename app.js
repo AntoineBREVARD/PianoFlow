@@ -1,5 +1,5 @@
 import { parseFile } from './parsers.js';
-import { DEMOS } from './songs.js';
+import { DEMOS, compose } from './songs.js';
 
 const $ = s => document.querySelector(s);
 const NAMES = ['Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'];
@@ -84,6 +84,16 @@ $('#file').onchange = async e => {
   }
   if (!store.set('sp.library', library)) msg.textContent += '⚠ Stockage plein : la partition ne sera pas gardée après fermeture.\n';
   e.target.value = ''; renderHome();
+};
+
+$('#newSong').onclick = () => { $('#c_msg').textContent = ''; $('#composer').hidden = false; };
+$('#c_cancel').onclick = () => { $('#composer').hidden = true; };
+$('#c_save').onclick = () => {
+  try {
+    const song = compose($('#c_title').value.trim() || 'Mon morceau', +$('#c_bpm').value || 100, $('#c_rh').value, $('#c_lh').value);
+    song.id = 'c' + Date.now(); library.unshift(song); store.set('sp.library', library);
+    $('#composer').hidden = true; renderHome();
+  } catch (e) { $('#c_msg').textContent = e.message.startsWith('note') ? 'Note inconnue : ' + e.message.slice(5) : e.message; }
 };
 
 let setupSong = null;
@@ -195,7 +205,11 @@ function startGame(song, warning) {
 
 function flash(text, color, ms = 700) { G.flash = { text, color, until: performance.now() + ms, from: performance.now() }; }
 
-function bps() { return G.song.bpm / 60 * G.sp; }
+function bpmAt(t) {
+  const tm = G.song.tempos; if (!tm) return G.song.bpm;
+  let b = tm[0][1]; for (const x of tm) { if (x[0] <= t + 1e-6) b = x[1]; else break; } return b;
+}
+function bps() { return bpmAt(G.t) / 60 * G.sp; }
 
 function update(dt) {
   const prev = G.t; let adv = bps() * dt;

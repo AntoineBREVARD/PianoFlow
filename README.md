@@ -10,4 +10,11 @@ Appli web (PWA) type Simply Piano : importe une partition MuseScore (`.mxl`, `.m
 Lancer en local : `python3 -m http.server 8123` puis ouvrir http://localhost:8123.
 Sur téléphone il faut du HTTPS (GitHub Pages, Netlify…) pour le micro et l'installation.
 
-Limites connues : reprises/da capo non dépliés, changements de tempo ignorés (premier tempo uniquement).
+Limites connues : da capo/coda/segno non gérés ; les reprises simples, voltas et changements de tempo le sont.
+
+## Sans MuseScore payant
+MuseScore Studio (musescore.org) est gratuit et exporte en .mxl/.mid. Des fichiers MIDI/MusicXML gratuits : piano-midi.de, Mutopia, IMSLP, BitMidi.
+On peut aussi écrire un morceau directement dans l'appli (« Écrire un morceau en texte »).
+
+## Publication (GitHub Pages)
+Réglages du dépôt → Pages → Source : **GitHub Actions**. Le workflow `.github/workflows/pages.yml` déploie à chaque push sur `main`.
