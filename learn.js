@@ -69,13 +69,14 @@ function weekDots() {
 
 /* ---------- séance du jour ---------- */
 function session() {
-  const units = Math.max(1, Math.round(plan.minutes / 5));
+  const units = Math.min(3, Math.max(1, Math.round(plan.minutes / 5))); // 3 éléments max : charge cognitive
   const next = ALL.findIndex(l => !done(l));
-  const reviews = ALL.filter(done).sort((a, b) => stars(a) - stars(b) || progress[a.id].last - progress[b.id].last);
+  const due = l => progress[l.id].due || 0;
+  const reviews = ALL.filter(done).sort((a, b) => due(a) - due(b) || stars(a) - stars(b));
   const items = [];
-  if (units >= 3 && reviews.length) items.push({ l: reviews[0], tag: 'Révision' });
+  if (units >= 2 && reviews.length && due(reviews[0]) <= Date.now()) items.push({ l: reviews[0], tag: 'Révision' });
   if (next >= 0) for (let i = next; i < ALL.length && items.length < units; i++) items.push({ l: ALL[i], tag: 'Nouveau' });
-  for (const l of reviews) if (items.length < units && !items.some(x => x.l === l)) items.push({ l, tag: 'Révision' });
+  for (const l of reviews) if (items.length < units && !items.some(x => x.l === l) && (next < 0 || due(l) <= Date.now())) items.push({ l, tag: 'Révision' });
   return items;
 }
 function renderToday() {
@@ -87,7 +88,7 @@ function renderToday() {
       <p>${ALL.some(done) ? 'Crée ton plan pour progresser sans effort.' : 'Pas de solfège, pas d\'abonnement. Suis les notes qui tombent sur le clavier.'}</p>
       <button id="cta" class="cta">${ALL.some(done) ? '📅 Créer mon plan' : '🎹 Commencer la leçon 1'}</button>
       <small class="mut">Aucune partition à lire · 3 min</small>
-      <ul class="perks"><li>27 leçons progressives, du premier Do aux morceaux à deux mains</li><li>Importe tes partitions (MIDI, MusicXML) et apprends-les main par main</li><li>Gratuit et hors ligne, sur téléphone, tablette ou avec ton piano USB</li></ul>
+      <ul class="perks"><li>${ALL.length} leçons progressives, du premier Do aux morceaux à deux mains</li><li>Importe tes partitions (MIDI, MusicXML) et apprends-les main par main</li><li>Gratuit et hors ligne, sur téléphone, tablette ou avec ton piano USB</li></ul>
       <p class="hint">🪑 Assieds-toi dos droit, épaules relâchées, poignets souples, doigts arrondis comme si tu tenais une balle. Si ta main serre, fais une pause.</p>
       <button id="skip" class="ghost">J\'ai déjà des bases</button></section>`;
     el.querySelector('#cta').onclick = () => ALL.some(done) ? planEditor(true) : startLesson(l, true);
@@ -105,7 +106,7 @@ function renderToday() {
       <p>${fresh ? 'Pas de solfège, pas d\'abonnement. Suis les notes qui tombent sur le clavier.' : 'Prochaine étape : <b>' + nxt.title + '</b>'}</p>
       <button id="cta" class="cta" aria-label="${fresh ? 'Commencer la leçon 1' : 'Continuer ma leçon'}">${fresh ? '🎹 Commencer la leçon 1' : '▶ Continuer ma leçon'}</button>
       <small class="mut">Aucune partition à lire · 3 min</small>
-      ${fresh ? '<ul class="perks"><li>27 leçons progressives, du premier Do aux morceaux à deux mains</li><li>Importe tes partitions (MIDI, MusicXML) et apprends-les main par main</li><li>Gratuit et hors ligne, sur téléphone, tablette ou avec ton piano USB</li></ul><p class="hint">🪑 Assieds-toi dos droit, épaules relâchées, poignets souples, doigts arrondis comme si tu tenais une balle. Si ta main serre, fais une pause.</p>' : '<p class="hint">🌙 Ton cerveau range ce que tu as appris pendant la nuit : 10 minutes aujourd\'hui puis 10 demain valent mieux que 20 d\'un coup.</p>'}
+      ${fresh ? '<ul class="perks"><li>' + ALL.length + ' leçons progressives, du premier Do aux morceaux à deux mains</li><li>Importe tes partitions (MIDI, MusicXML) et apprends-les main par main</li><li>Gratuit et hors ligne, sur téléphone, tablette ou avec ton piano USB</li></ul><p class="hint">🪑 Assieds-toi dos droit, épaules relâchées, poignets souples, doigts arrondis comme si tu tenais une balle. Si ta main serre, fais une pause.</p>' : '<p class="hint">🌙 Ton cerveau range ce que tu as appris pendant la nuit : 10 minutes aujourd\'hui puis 10 demain valent mieux que 20 d\'un coup.</p>'}
     </section>` : '';
   el.innerHTML = hero + `
     <section class="card">
@@ -167,6 +168,8 @@ function startLesson(l, ok) {
 function lessonDone(l, s) {
   const p = (progress[l.id] ||= { stars: 0, plays: 0 });
   p.stars = Math.max(p.stars, s.stars); p.plays++; p.last = Date.now();
+  p.box = s.stars >= 2 ? Math.min(4, (p.box || 0) + 1) : s.stars === 1 ? (p.box || 0) : 0;
+  p.due = Date.now() + (s.stars ? [1, 3, 7, 14, 30][p.box] : 1) * 864e5;
   const d = (days[dkey()] ||= { sec: 0, done: [] }); if (s.stars >= 1 && !d.done.includes(l.id)) d.done.push(l.id);
   H.store.set('sp.progress', progress); H.store.set('sp.days', days);
   const i = ALL.indexOf(l), nx = ALL[i + 1];

@@ -1,6 +1,6 @@
 # PianoFlow 🎹
 
-Appli web (PWA) type Simply Piano — avec un **cours complet** (27 leçons, du premier Do aux morceaux à deux mains), un **plan d'apprentissage** selon ta fréquence (séance du jour, série, rappels .ics) et un **apprentissage guidé** de n'importe quel morceau (main droite → gauche → ensemble → tempo) : importe une partition MuseScore (`.mxl`, `.musicxml`, `.mid`), les notes tombent sur un clavier, et tu joues.
+Appli web (PWA) type Simply Piano — avec un **cours complet** (32 leçons, du premier Do aux morceaux à deux mains), un **plan d'apprentissage** selon ta fréquence (séance du jour, série, rappels .ics) et un **apprentissage guidé** de n'importe quel morceau (main droite → gauche → ensemble → tempo) : importe une partition MuseScore (`.mxl`, `.musicxml`, `.mid`), les notes tombent sur un clavier, et tu joues.
 
 - **Modes** : pas à pas (attend la bonne note), rythme (suit le tempo), démo
 - **Mains** : droite / gauche / les deux · vitesse réglable · noms de notes (Do Ré Mi)
