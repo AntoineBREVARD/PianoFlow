@@ -118,6 +118,15 @@ $('#c_save').onclick = () => {
   } catch (e) { $('#c_msg').textContent = e.message.startsWith('note') ? 'Note inconnue : ' + e.message.slice(5) : e.message; }
 };
 
+// réglages généraux (leçons comprises) : entrée, noms de notes, décalage micro
+$('#prefsBtn').onclick = () => {
+  $('#p_input').value = settings.input; $('#p_names').checked = settings.names;
+  $('#p_lat').value = micLat; $('#p_latVal').textContent = Math.round(micLat * 1000) + ' ms';
+  $('#p_recal').textContent = 'Recalibrer le micro'; $('#prefs').hidden = false;
+};
+$('#p_lat').oninput = e => { micLat = +e.target.value; $('#p_latVal').textContent = Math.round(micLat * 1000) + ' ms'; store.set('sp.micLat', micLat); };
+$('#p_recal').onclick = () => { store.set('sp.micFloor', null); $('#p_recal').textContent = 'Recalibrage au prochain lancement ✓'; };
+$('#p_close').onclick = () => { settings.input = $('#p_input').value; settings.names = $('#p_names').checked; store.set('sp.settings', settings); $('#prefs').hidden = true; };
 let setupSong = null;
 function openSetup(song) {
   setupSong = song; $('#setupTitle').textContent = song.title;
