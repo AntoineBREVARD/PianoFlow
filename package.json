@@ -5,7 +5,7 @@
   "type": "module",
   "description": "PianoFlow - appli piano (PWA + APK Android via Capacitor)",
   "scripts": {
-    "test": "node test.mjs"
+    "test": "node run-tests.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^6.1.2",

@@ -19,8 +19,9 @@ export function finalize(song) {
   raw.sort((a, b) => a.s - b.s || a.m - b.m);
   const t0 = raw[0].s;
   const notes = raw.map(n => [n.m, round(n.s - t0), Math.max(0.1, round(n.d)), n.h, ...(n.f ? [n.f] : [])]);
-  const tempos = (song.tempos || []).map(([b, v]) => [round(Math.max(0, b - t0)), Math.round(v)]);
-  const out = { title: song.title, bpm: Math.round(tempos[0]?.[1] || song.bpm || 100), notes };
+  const clamp = v => Math.min(400, Math.max(20, Math.round(v)));
+  const tempos = (song.tempos || []).filter(([, v]) => Number.isFinite(v) && v > 0).map(([b, v]) => [round(Math.max(0, b - t0)), clamp(v)]);
+  const out = { title: song.title, bpm: clamp(tempos[0]?.[1] || (song.bpm > 0 && Number.isFinite(song.bpm) ? song.bpm : 100)), notes };
   if (tempos.length > 1) out.tempos = tempos;
   return out;
 }
@@ -52,7 +53,7 @@ export function parseMidi(buf) {
       if (st < 0x80) st = run; else { p++; if (st < 0xf0) run = st; }
       if (st === 0xff) {
         const type = v.getUint8(p++); const l = vlq();
-        if (type === 0x51) { const b = 60000000 / ((v.getUint8(p) << 16) | (v.getUint8(p + 1) << 8) | v.getUint8(p + 2)); if (bpm == null) bpm = b; tempos.push([tick / div, b]); }
+        if (type === 0x51) { const mpq = (v.getUint8(p) << 16) | (v.getUint8(p + 1) << 8) | v.getUint8(p + 2), b = 60000000 / mpq; if (Number.isFinite(b) && b > 0) { if (bpm == null) bpm = b; tempos.push([tick / div, b]); } }
         if (type === 0x03 && !title) { let s = ''; for (let i = 0; i < l; i++) s += String.fromCharCode(v.getUint8(p + i)); title = s.trim(); }
         p += l;
       } else if (st === 0xf0 || st === 0xf7) { p += vlq(); }
@@ -70,7 +71,7 @@ export function parseMidi(buf) {
     p = end;
     if (notes.length) tracks.push(notes);
   }
-  if (!tracks.length) throw new Error('Aucune note dans ce MIDI.');
+  if (!tracks.length) throw new Error('Aucune note trouvée dans ce MIDI.');
   const raw = [];
   if (tracks.length >= 2) {
     const avg = tracks.map(t => t.reduce((s, n) => s + n.m, 0) / t.length);
@@ -177,29 +178,38 @@ export function parseXml(text) {
 }
 
 /* ------------------------------ .mxl (zip) ------------------------------ */
-async function readMxl(buf) {
+export const MXL_MAX = 20 * 1024 * 1024;
+export async function readMxl(buf) {
   const v = new DataView(buf), u8 = new Uint8Array(buf), dec = new TextDecoder();
   let e = buf.byteLength - 22;
   while (e >= 0 && v.getUint32(e, true) !== 0x06054b50) e--;
   if (e < 0) throw new Error('Archive .mxl invalide.');
   const n = v.getUint16(e + 10, true);
   let p = v.getUint32(e + 16, true);
-  const files = {};
+  const files = Object.create(null);
   for (let i = 0; i < n; i++) {
     if (v.getUint32(p, true) !== 0x02014b50) break;
-    const method = v.getUint16(p + 10, true), csize = v.getUint32(p + 20, true);
+    const method = v.getUint16(p + 10, true), csize = v.getUint32(p + 20, true), usize = v.getUint32(p + 24, true);
     const nl = v.getUint16(p + 28, true), xl = v.getUint16(p + 30, true), cl = v.getUint16(p + 32, true);
     const off = v.getUint32(p + 42, true);
-    files[dec.decode(u8.subarray(p + 46, p + 46 + nl))] = { method, csize, off };
+    files[dec.decode(u8.subarray(p + 46, p + 46 + nl))] = { method, csize, usize, off };
     p += 46 + nl + xl + cl;
   }
   const read = async name => {
-    const f = files[name]; const lh = f.off;
+    const f = files[name]; if (!f) throw new Error('Fichier introuvable dans le .mxl : ' + name); const lh = f.off;
+    if (f.usize > MXL_MAX) throw new Error('Archive .mxl trop volumineuse (plus de 20 Mo décompressés).');
     const start = lh + 30 + v.getUint16(lh + 26, true) + v.getUint16(lh + 28, true);
     const data = u8.subarray(start, start + f.csize);
     if (f.method === 0) return dec.decode(data);
-    const s = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-    return dec.decode(await new Response(s).arrayBuffer());
+    const rd = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+    const parts = []; let total = 0;
+    for (;;) {
+      const { done, value } = await rd.read(); if (done) break;
+      total += value.length;
+      if (total > MXL_MAX || total > f.usize + 1024) { rd.cancel().catch(() => {}); throw new Error('Archive .mxl suspecte : taille décompressée excessive, fichier refusé.'); }
+      parts.push(value);
+    }
+    return dec.decode(await new Blob(parts).arrayBuffer());
   };
   let root = null;
   if (files['META-INF/container.xml']) {

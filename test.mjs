@@ -4,6 +4,7 @@ import { detect, onset, calibrate, levels } from './mic.js';
 import { DEMOS } from './songs.js';
 import { parseMidi } from './parsers.js';
 import { placementLevel, QUESTIONS } from './placement.js';
+import { CHORDS, validate, question, unlocked, schedule, session, mastered, boxOf, clampBox, dkey } from './chords.js';
 
 const SR = 44100, N = 16384, freq = m => 440 * 2 ** ((m - 69) / 12);
 let seed = 1; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5;
@@ -72,4 +73,39 @@ assert.equal(placementLevel([true, true, true, true, true]), 6);
 assert.equal(placementLevel([true, false, true, false, true]), 3);
 assert.ok(QUESTIONS.every(q => q.ok < q.choices.length));
 
+// Accords : validation, débloquage, planification
+const ch = s => CHORDS.find(c => c.sym === s);
+assert.ok(validate(ch('Am'), [69, 72, 76]) && validate(ch('Am'), [45, 60, 88]), 'octave libre');
+assert.ok(!validate(ch('Am'), [57, 60]) && !validate(ch('Am'), [57, 60, 64, 66]) && !validate(ch('Am'), []), 'incomplet / intrus');
+assert.ok(validate(ch('C/E'), [52, 60, 67]) && !validate(ch('C/E'), [48, 52, 55]), 'renversement : basse imposée');
+assert.equal(question(ch('Bb')).root, 'Bb'); assert.deepEqual(question(ch('A')).names, ['A', 'C#', 'E']);
+for (const c of CHORDS) assert.ok(validate(c, c.notes), 'accord valide : ' + c.sym);
+const st = { cards: {} };
+assert.deepEqual(unlocked(st).map(c => c.sym), ['C', 'F']);
+const T = 1e9, D = 864e5;
+assert.equal(schedule(st, 'C', true, true, T), 1); assert.equal(st.cards.C.due, T + 3 * D);
+assert.equal(schedule(st, 'C', true, false, T), 1, 'correct lent : reste');
+schedule(st, 'C', true, true, T); assert.equal(st.cards.C.box, 2);
+assert.equal(unlocked(st).length, 2, 'F pas encore en boîte 2');
+schedule(st, 'F', true, true, T); schedule(st, 'F', true, true, T);
+assert.deepEqual(unlocked(st).map(c => c.sym), ['C', 'F', 'G', 'Am']);
+for (let i = 0; i < 5; i++) schedule(st, 'C', true, true, T); assert.equal(st.cards.C.box, 4); assert.equal(mastered(st).length, 1);
+assert.equal(schedule(st, 'C', false, false, T), 0, 'fausse : boîte 0');
+const ses = session(st, T + 100 * D); assert.equal(ses.length, 8);
+assert.ok(ses.includes(ch('G')) && ses.includes(ch('Am')), 'nouveaux inclus'); assert.ok(ses.every(c => unlocked(st).includes(c)));
+
 console.log('OK : tous les tests passent (' + DEMOS.length + ' morceaux)');
+
+// clé de date locale partagée (format de dkey de learn.js) + cartes d'accords corrompues
+{
+  const d = new Date(2026, 0, 5, 0, 30); // 00h30 local : le jour UTC peut différer
+  assert.equal(dkey(d), '2026-01-05');
+  assert.match(dkey(), /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(clampBox(9), 4); assert.equal(clampBox(-2), 0); assert.equal(clampBox(NaN), 0); assert.equal(clampBox(2.7), 2);
+  const st = { cards: { C: { box: 42, due: NaN, seen: 1 }, F: null } };
+  assert.equal(boxOf(st, 'C'), 4); assert.equal(boxOf(st, 'F'), -1);
+  assert.ok(session(st, Date.now()).length === 8);
+  assert.ok(schedule({ cards: null }, 'C', true, true) >= 0);
+  assert.ok(Number.isFinite(schedule(st, 'C', true, true) + st.cards.C.due));
+  console.log('chords robustesse OK');
+}

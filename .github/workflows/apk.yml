@@ -5,6 +5,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -22,7 +25,21 @@ jobs:
           restore-keys: gradle-
       - name: Copier le site dans www
         run: mkdir www && cp index.html style.css *.js manifest.json icon.svg www/ && rm www/sw.js
-      - run: node test.mjs
+      - name: Vérifier la syntaxe des modules
+        run: for f in *.js; do node --check "$f"; done
+      - run: node run-tests.mjs
+      - name: Vérifier les fichiers du cache hors ligne (sw.js) dans www
+        # sw.js est retiré de www (Capacitor sert déjà les fichiers en local) ; il ne doit donc pas être dans www, mais tout le reste de FILES oui
+        run: |
+          node -e "
+          const fs=require('fs');
+          const src=fs.readFileSync('sw.js','utf8');
+          const files=eval(src.match(/const FILES = (\[[^\]]*\])/)[1]).filter(f=>f!=='./');
+          const miss=files.filter(f=>!fs.existsSync('www/'+f));
+          for(const m of ['chords.js','train.js','reading.js','ear.js','stats.js','synth.js','mic.js','placement.js']) if(!fs.existsSync('www/'+m)) miss.push(m);
+          if(fs.existsSync('www/sw.js')) miss.push('www/sw.js (devrait être retiré)');
+          if(miss.length){console.error('Fichiers manquants/incohérents :',[...new Set(miss)].join(', '));process.exit(1)}
+          console.log('cache OK :',files.length,'fichiers présents dans www')"
       - run: npm install
       - name: Générer le projet Android
         run: |

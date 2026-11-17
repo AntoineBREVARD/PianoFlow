@@ -1,6 +1,7 @@
 // Cours, plan d'apprentissage, séance du jour, parcours guidé d'un morceau.
 import { LEVELS, ALL } from './curriculum.js';
 import { QUESTIONS, placementLevel } from './placement.js';
+import { esc, fixPlan, fixProfile } from './stats.js';
 
 const $ = s => document.querySelector(s);
 let planAsked = false, freezeUsed = false, wk = null, H = null, progress = {}, plan = null, days = {}, guidedP = {};
@@ -16,8 +17,9 @@ const PRESETS = [
 
 export function init(host) {
   H = host;
-  progress = H.store.get('sp.progress', {}); plan = H.store.get('sp.plan', null);
-  wk = H.store.get('sp.week', null); days = H.store.get('sp.days', {}); guidedP = H.store.get('sp.guided', {});
+  const obj = v => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+  progress = obj(H.store.get('sp.progress', {})); plan = fixPlan(H.store.get('sp.plan', null));
+  wk = H.store.get('sp.week', null); if (!wk || typeof wk !== 'object') wk = null; days = obj(H.store.get('sp.days', {})); guidedP = obj(H.store.get('sp.guided', {}));
   document.querySelectorAll('#tabs button[data-tab]').forEach(b => b.onclick = () => tab(b.dataset.tab));
   $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
   tab(H.store.get('sp.tab', 'today'));
@@ -25,16 +27,17 @@ export function init(host) {
 export function refresh() { renderToday(); renderCourse(); }
 export function onTime(secs) {
   if (!(secs > 0)) return;
-  const d = (days[dkey()] ||= { sec: 0, done: [] }); d.sec += secs;
+  const d = (days[dkey()] ||= { sec: 0, done: [] }); if (!Array.isArray(d.done)) d.done = []; if (!(d.sec >= 0)) d.sec = 0; d.sec += secs;
   H.store.set('sp.days', days); wkGet().sec += secs; H.store.set('sp.week', wk);
 }
 
 /* ---------- helpers ---------- */
 function tab(name) {
   H.store.set('sp.tab', name);
-  for (const t of ['today', 'course', 'songs']) $('#tab-' + t).hidden = t !== name;
+  for (const t of ['today', 'course', 'train', 'songs']) $('#tab-' + t).hidden = t !== name;
   document.querySelectorAll('#tabs button[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
   refresh(); scrollTo(0, 0);
+  if (name === 'train') import('./train.js').then(m => m.mount($('#tab-train'), H.store));
 }
 function modal(html) { $('#modalBody').innerHTML = html; $('#modal').hidden = false; return $('#modalBody'); }
 function closeModal() { $('#modal').hidden = true; }
@@ -46,8 +49,14 @@ const BADGES = {
   streak3: ['🔥', '3 jours de suite', 'Série de 3 jours'], notes100: ['🎵', '100 notes justes', 'Joue 100 notes justes'],
   review: ['🔁', 'Première révision', 'Rejoue avec succès une leçon déjà réussie'], week: ['🎯', 'Objectif hebdo', 'Atteins les 3 cibles de la semaine'],
   streak7: ['🌟', '7 jours de suite', 'Série de 7 jours'], lvl3: ['🚀', 'Niveau 3', 'Atteins le niveau 3 (XP)'], ten: ['📚', '10 leçons', 'Réussis 10 leçons'],
+  chords10: ['🎼', '10 accords maîtrisés', 'Maîtrise 10 accords (onglet Entraîner)'], reader: ['👓', 'Lecteur', 'Atteins le palier 3 de lecture de notes'], ear3: ['👂', 'Oreille musicale', 'Atteins le palier 3 de l\'oreille'],
 };
-const profile = () => H.store.get('sp.profile', { xp: 0, hits: 0, badges: {} });
+// État de l'entraînement (onglet Entraîner) lu directement dans le store : sp.chords, sp.reading, sp.ear
+const trainSt = k => H.store.get(k, null) || {};
+const TPASS = { 'sp.reading': 0.85, 'sp.ear': 0.8 }; // mêmes seuils que reading.js / ear.js
+const tier3 = k => (trainSt(k).best?.[1] ?? 0) >= TPASS[k]; // palier 3 atteint = palier 2 validé
+
+const profile = () => fixProfile(H.store.get('sp.profile', null));
 const levelOf = xp => Math.floor(Math.sqrt(xp / 50)) + 1;
 function wkey(d = new Date()) { const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7)); const y = t.getUTCFullYear(); return y + '-W' + Math.ceil(((t - Date.UTC(y, 0, 1)) / 864e5 + 1) / 7); }
 function wkGet() { const id = wkey(); if (!wk || wk.id !== id) wk = { id, sec: 0, lessons: 0, reviews: 0 }; return wk; }
@@ -56,7 +65,7 @@ const weekDone = () => !!plan && goals().every(g => g[1] >= g[2]);
 function grant(p, s, l) {
   const got = [], t = {
     first: s?.stars >= 1, star3: s?.stars >= 3, notes100: p.hits >= 100, streak3: streak() >= 3, streak7: streak() >= 7, lvl3: levelOf(p.xp) >= 3,
-    ten: ALL.filter(done).length >= 10, review: !!s?.review, week: weekDone(), lvl: s?.stars >= 1 && LEVELS[l.level].lessons.every(x => done(x) || x.id === l.id),
+    ten: ALL.filter(done).length >= 10, review: !!s?.review, week: weekDone(), chords10: Object.values(trainSt('sp.chords').cards || {}).filter(c => c?.box >= 3).length >= 10, reader: tier3('sp.reading'), ear3: tier3('sp.ear'), lvl: s?.stars >= 1 && LEVELS[l.level].lessons.every(x => done(x) || x.id === l.id),
   };
   for (const k in t) if (t[k] && !p.badges[k]) { p.badges[k] = Date.now(); got.push(BADGES[k][0] + ' ' + BADGES[k][1]); }
   return got;
@@ -74,7 +83,7 @@ function badgesModal() {
   b.querySelector('#mOk').onclick = closeModal;
 }
 const SLEEP = '🌙 Ton cerveau range ce que tu as appris pendant la nuit : 10 minutes aujourd\'hui puis 10 demain valent mieux que 20 d\'un coup.';
-const starStr = n => '★'.repeat(n) + '☆'.repeat(3 - n);
+const starStr = n => { n = Math.max(0, Math.min(3, Math.floor(+n) || 0)); return '★'.repeat(n) + '☆'.repeat(3 - n); };
 const scheduled = date => plan?.days.includes(date.getDay());
 const validated = key => (days[key]?.sec || 0) >= plan.minutes * 60 * 0.7;
 function streak() {
@@ -115,6 +124,17 @@ function session() {
   for (const l of reviews) if (items.length < units && !items.some(x => x.l === l) && (next < 0 || due(l) <= Date.now())) items.push({ l, tag: 'Révision' });
   return items;
 }
+const TRAIN = { chords: ['🎹', 'Accords'], reading: ['👀', 'Lecture de notes'], ear: ['👂', 'Oreille'] };
+function trainPick() { // l'exercice qui a le plus de révisions dues ; à égalité, rotation par jour
+  const now = Date.now(), dueN = k => Object.values(trainSt(k).cards || {}).filter(c => c?.due <= now).length;
+  const n = { chords: dueN('sp.chords'), reading: dueN('sp.reading'), ear: dueN('sp.ear') }, ks = Object.keys(n);
+  const rot = Math.floor(now / 864e5) % 3, order = [...ks.slice(rot), ...ks.slice(0, rot)];
+  return order.reduce((a, k) => (n[k] > n[a] ? k : a), order[0]);
+}
+function trainCredit() { // l'entraînement fait aujourd'hui (journal écrit par train.js) compte 3 min dans l'objectif
+  const lg = H.store.get('sp.trainLog', null), d = (days[dkey()] ||= { sec: 0, done: [] }); if (!Array.isArray(d.done)) d.done = []; if (!(d.sec >= 0)) d.sec = 0;
+  if (lg?.d === dkey() && !d.train) { d.train = 1; onTime(180); }
+}
 function renderToday() {
   const el = $('#tab-today'); if (!plan) {
     const l = ALL.find(x => !done(x));
@@ -131,6 +151,7 @@ function renderToday() {
     el.querySelector('#skip').onclick = () => planEditor(true);
     return;
   }
+  if (plan) trainCredit();
   const key = dkey(), rec = days[key] || { sec: 0, done: [] }, sch = scheduled(new Date());
   const target = plan.minutes * 60, pct = Math.min(100, rec.sec / target * 100);
   const wk = weekDots(), sn = streak();
@@ -139,7 +160,7 @@ function renderToday() {
   const nxt = ALL.find(l => !done(l)), fresh = !ALL.some(done);
   const hero = nxt ? `<section class="card hero">
       <h1>${fresh ? 'Joue ton premier morceau aujourd\'hui' : 'Content de te revoir !'}</h1>
-      <p>${fresh ? 'Pas de solfège, pas d\'abonnement. Suis les notes qui tombent sur le clavier.' : 'Prochaine étape : <b>' + nxt.title + '</b>'}</p>
+      <p>${fresh ? 'Pas de solfège, pas d\'abonnement. Suis les notes qui tombent sur le clavier.' : 'Prochaine étape : <b>' + esc(nxt.title) + '</b>'}</p>
       <button id="cta" class="cta" aria-label="${fresh ? 'Commencer la leçon 1' : 'Continuer ma leçon'}">${fresh ? '🎹 Commencer la leçon 1' : '▶ Continuer ma leçon'}</button>
       <small class="mut">Aucune partition à lire · 3 min</small>
       ${fresh ? '<ul class="perks"><li>' + ALL.length + ' leçons progressives, du premier Do aux morceaux à deux mains</li><li>Importe tes partitions (MIDI, MusicXML) et apprends-les main par main</li><li>Gratuit et hors ligne, sur téléphone, tablette ou avec ton piano USB</li></ul><p class="hint">🪑 Assieds-toi dos droit, épaules relâchées, poignets souples, doigts arrondis comme si tu tenais une balle. Si ta main serre, fais une pause.</p>' : '<p class="hint">🌙 Ton cerveau range ce que tu as appris pendant la nuit : 10 minutes aujourd\'hui puis 10 demain valent mieux que 20 d\'un coup.</p>'}
@@ -147,7 +168,7 @@ function renderToday() {
   const pf = profile(); if (grant(pf).length) H.store.set('sp.profile', pf);
   const nb = Object.keys(pf.badges).length;
   el.innerHTML = hero + `
-    <section class="card"><div class="status"><b>Niveau ${levelOf(pf.xp)}</b><span>${pf.xp} XP</span><button id="bdg" class="ghost">🏅 ${nb}/${Object.keys(BADGES).length} badges</button></div>
+    <section class="card"><div class="status"><b>Niveau ${levelOf(pf.xp)}</b><span>${+pf.xp || 0} XP</span><button id="bdg" class="ghost">🏅 ${nb}/${Object.keys(BADGES).length} badges</button><button id="stt" class="ghost">📈 Ma progression</button></div>
       <div class="progress"><div style="width:${(pf.xp - 50 * (levelOf(pf.xp) - 1) ** 2) / (50 * (2 * levelOf(pf.xp) - 1)) * 100}%"></div></div></section>
     <section class="card">
       <div class="streak"><div class="big-n">🔥 ${sn}</div><div>${sn > 1 ? 'jours de suite' : sn === 1 ? 'jour validé' : 'Commence ta série aujourd\'hui !'}<br><small>Cette semaine : ${wk.ok}/${wk.goal} séances · ${freezeUsed ? '🧊 gel utilisé' : '🧊 gel disponible'}</small></div></div>
@@ -155,10 +176,10 @@ function renderToday() {
     </section>
     <section class="card"><h2>Objectif de la semaine</h2>${goals().map(([t, v, m]) => `<small class="mut">${t} : ${Math.min(v, m)}/${m}${v >= m ? ' ✓' : ''}</small><div class="progress"><div style="width:${Math.min(100, v / m * 100)}%"></div></div>`).join('')}</section>
     <section class="card">
-      <h2>${sch ? 'Séance du jour' : 'Jour de repos'} <small class="mut">· ${plan.minutes} min</small></h2>
+      <h2>${sch ? 'Séance du jour' : 'Jour de repos'} <small class="mut">· ${+plan.minutes} min</small></h2>
       ${sch ? '' : '<p class="hint" style="margin-top:0">Ce n\'est pas un jour d\'entraînement prévu — mais tu peux t\'entraîner quand même.</p>'}
       <div class="progress"><div style="width:${pct}%"></div></div>
-      <small class="mut">${Math.floor(rec.sec / 60)} / ${plan.minutes} min jouées aujourd'hui${validated(key) ? ' · ✓ séance validée' : ''}</small>
+      <small class="mut">${Math.floor((+rec.sec || 0) / 60)} / ${+plan.minutes} min jouées aujourd'hui${validated(key) ? ' · ✓ séance validée' : ''}</small>
       <ul id="sess"></ul>
       ${items.length ? '' : '<p>🎉 Tu as terminé tout le programme ! Choisis un morceau dans l\'onglet « Morceaux ».</p>'}
     </section>
@@ -172,7 +193,17 @@ function renderToday() {
     b.onclick = () => startLesson(l, ok);
     li.append(b); ul.append(li);
   });
+  const tk = trainPick(), li = document.createElement('li'), td = !!rec.train;
+  li.innerHTML = `<div class="info"><b>${TRAIN[tk][0]} Entraînement · 3 min</b><small>${TRAIN[tk][1]} · ${td ? '✓ fait aujourd\'hui' : 'mini-exercice du jour'}</small></div>`;
+  const tb = document.createElement('button'); tb.textContent = td ? 'Rejouer' : 'Jouer'; tb.className = td ? 'ghost' : 'primary';
+  tb.onclick = () => { H.store.set('sp.trainGo', tk); document.querySelector('[data-tab=train]').click(); };
+  li.append(tb); ul.append(li);
   el.querySelector('#bdg').onclick = badgesModal;
+  el.querySelector('#stt').onclick = () => {
+    const b = modal('<div id="statsBox"></div><div class="actions"><button class="primary" id="mOk">Fermer</button></div>');
+    $('#mOk').onclick = closeModal;
+    import('./stats.js').then(m => m.mount(b.querySelector('#statsBox'), H.store)).catch(() => { b.querySelector('#statsBox').textContent = 'Page indisponible.'; });
+  };
   el.querySelector('#editPlan').onclick = () => planEditor(false);
   const cta = el.querySelector('#cta'); if (cta) cta.onclick = () => startLesson(nxt, true);
 }
@@ -213,7 +244,7 @@ function lessonDone(l, s) {
   p.stars = Math.max(p.stars, s.stars); p.plays++; p.last = Date.now();
   p.box = s.stars >= 2 ? Math.min(4, (p.box || 0) + 1) : s.stars === 1 ? (p.box || 0) : 0;
   p.due = Date.now() + (s.stars ? [1, 3, 7, 14, 30][p.box] : 1) * 864e5;
-  const d = (days[dkey()] ||= { sec: 0, done: [] }); if (s.stars >= 1 && !d.done.includes(l.id)) d.done.push(l.id);
+  const d = (days[dkey()] ||= { sec: 0, done: [] }); if (!Array.isArray(d.done)) d.done = []; if (!(d.sec >= 0)) d.sec = 0; if (s.stars >= 1 && !d.done.includes(l.id)) d.done.push(l.id);
   H.store.set('sp.progress', progress); H.store.set('sp.days', days);
   if (s.stars >= 1) { wkGet()[was ? 'reviews' : 'lessons']++; H.store.set('sp.week', wk); }
   const i = ALL.indexOf(l), nx = ALL[i + 1], xp = award(l, { ...s, review: was && s.stars >= 1 });
@@ -232,7 +263,7 @@ function planEditor(first) {
     <div class="chips">${PRESETS.map((x, i) => `<button class="chip" data-i="${i}">${x.label}</button>`).join('')}</div>
     <div class="dayrow">${ORDER.map(d => `<label class="day"><input type="checkbox" value="${d}" ${p.days.includes(d) ? 'checked' : ''}><span>${DOW[d]}</span></label>`).join('')}</div>
     <label>Durée d'une séance<select id="p_min">${[5, 10, 15, 20, 30, 45, 60].map(m => `<option ${m === p.minutes ? 'selected' : ''} value="${m}">${m} minutes</option>`).join('')}</select></label>
-    <label>Heure du rappel<input id="p_time" type="time" value="${p.time || '18:00'}"></label>
+    <label>Heure du rappel<input id="p_time" type="time" value="${esc(p.time || '18:00')}"></label>
     <div class="actions" style="justify-content:space-between"><button class="ghost" id="p_ics">📅 Rappels dans mon agenda</button><button class="primary" id="p_save">Enregistrer</button></div>`);
   b.querySelectorAll('.chip').forEach(c => c.onclick = () => {
     const x = PRESETS[+c.dataset.i];
