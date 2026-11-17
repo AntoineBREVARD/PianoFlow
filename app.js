@@ -1,6 +1,7 @@
 import { parseFile } from './parsers.js';
 import { DEMOS, compose } from './songs.js';
 import * as learn from './learn.js';
+import * as mic from './mic.js';
 
 const $ = s => document.querySelector(s);
 const NAMES = ['Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'];
@@ -143,7 +144,15 @@ async function begin(song, opts) {
 }
 
 /* ============================ Entrées : micro & MIDI ============================ */
-let micStream = null, analyser = null, midiAccess = null;
+let micStream = null, analyser = null, midiAccess = null, micBuf = null;
+let micLat = +store.get('sp.micLat', 0.15) || 0; // latence micro (s) soustraite au temps de jugement ; réglable : __sp.setLat(0.2)
+const bindMidi = () => midiAccess.inputs.forEach(i => { i.onmidimessage = midiMsg; });
+function calibMsg(t) {
+  let d = $('#calib');
+  if (!t) { d?.remove(); return; }
+  if (!d) { d = document.createElement('div'); d.id = 'calib'; d.style.cssText = 'position:fixed;inset:0;display:grid;place-items:center;background:#000c;color:#fff;font-size:1.4rem;z-index:99;text-align:center'; document.body.append(d); }
+  d.textContent = t;
+}
 async function startInputs() {
   stopMic();
   try {
@@ -152,20 +161,34 @@ async function startInputs() {
       const a = audio(); const src = a.createMediaStreamSource(micStream);
       analyser = a.createAnalyser(); analyser.fftSize = 16384; analyser.smoothingTimeConstant = 0;
       src.connect(analyser);
+      micBuf = new Float32Array(analyser.frequencyBinCount); // alloué une seule fois par session micro
+      if (store.get('sp.micFloor', null) == null) {
+        calibMsg('Silence 2 s…');
+        const frames = [];
+        for (let i = 0; i < 20; i++) {
+          await new Promise(r => setTimeout(r, 100));
+          if (i >= 3) { analyser.getFloatFrequencyData(micBuf); frames.push(micBuf.slice()); } // 3 premières : analyseur pas encore rempli
+        }
+        store.set('sp.micFloor', mic.calibrate(frames));
+      }
     } else if (settings.input === 'midi') {
-      if (!navigator.requestMIDIAccess) return 'Web MIDI indisponible sur ce navigateur (essaie Chrome sur Android).';
-      midiAccess = await navigator.requestMIDIAccess();
-      midiAccess.inputs.forEach(i => { i.onmidimessage = midiMsg; });
-      midiAccess.onstatechange = () => midiAccess.inputs.forEach(i => { i.onmidimessage = midiMsg; });
+      if (!navigator.requestMIDIAccess) return 'MIDI USB non disponible ici : installe PianoFlow depuis Chrome (Ajouter à l\'écran d\'accueil).';
+      midiAccess ||= await navigator.requestMIDIAccess();
+      bindMidi(); midiAccess.onstatechange = bindMidi; // affectation (pas d'empilement)
       if (!midiAccess.inputs.size) return 'Aucun piano MIDI détecté : branche-le puis relance le morceau.';
     }
-  } catch (e) { settings.input = 'touch'; return 'Entrée indisponible (' + (e.message || e.name) + ') : clavier tactile utilisé.'; }
+  } catch (e) { stopMic(); settings.input = 'touch'; return 'Entrée indisponible (' + (e.message || e.name) + ') : clavier tactile utilisé.'; }
+  finally { calibMsg(); }
   return null;
 }
 function stopMic() {
   if (micStream) micStream.getTracks().forEach(t => t.stop());
-  micStream = null; analyser = null;
+  micStream = null; analyser = null; micBuf = null; micSt.clear();
 }
+// sons automatiques (démo / main non travaillée) : timers suivis pour pouvoir les couper
+const autoV = new Map();
+function stopAuto() { for (const [id, v] of autoV) { clearTimeout(id); v.off(); } autoV.clear(); }
+$('#s_recal').onclick = () => { store.set('sp.micFloor', null); $('#s_recal').textContent = 'Recalibrage au prochain lancement ✓'; };
 function midiMsg(e) {
   const [st, a, b] = e.data, hi = st & 0xf0;
   if (hi === 0x90 && b > 0) press(a, 'midi' + a, b / 127);
@@ -174,27 +197,25 @@ function midiMsg(e) {
 
 // Détection micro : on ne cherche pas "quelle note", mais "est-ce que les notes ATTENDUES sonnent ?"
 // (méthode utilisée pour supporter les accords). Expérimental : calme + micro près du piano.
-const micActive = new Set();
+// État par note attendue : niveau précédent, historique de flux, attaque en attente (ticks), anti-rebond.
+const micSt = new Map();
 function micTick() {
-  if (!analyser || !G) return;
-  const data = new Float32Array(analyser.frequencyBinCount);
-  analyser.getFloatFrequencyData(data);
-  const binHz = ac.sampleRate / analyser.fftSize;
-  const lvl = m => {
-    const f = freq(m), c = Math.round(f / binHz), w = Math.max(1, Math.round(f * 0.025 / binHz));
-    let pk = -200; for (let i = c - w; i <= c + w; i++) pk = Math.max(pk, data[i] ?? -200);
-    let sum = 0, n = 0;
-    for (let i = Math.round(f * 0.7 / binHz); i <= Math.round(f * 1.5 / binHz); i++) if (Math.abs(i - c) > w + 2) { sum += data[i]; n++; }
-    return { pk, rel: pk - sum / Math.max(1, n) };
-  };
-  const exp = new Set(expectedNow().map(n => n.m));
+  if (!analyser || !G || !micBuf) return;
+  analyser.getFloatFrequencyData(micBuf);
+  const sr = ac.sampleRate, fft = analyser.fftSize, floor = store.get('sp.micFloor', -90);
+  const exp = new Set(expectedNow().map(n => n.m)), now = performance.now();
+  const found = mic.detect(micBuf, sr, fft, exp, { floor });
   for (const m of exp) {
-    const l = lvl(m), low = lvl(m - 12);
-    const active = l.pk > -80 && l.rel > (micActive.has(m) ? 8 : 15) && !(low.rel > l.rel + 3);
-    if (active && !micActive.has(m)) { micActive.add(m); press(m, 'mic' + m, 0.8, true); setTimeout(() => release('mic' + m), 150); }
-    else if (!active) micActive.delete(m);
+    let s = micSt.get(m); if (!s) micSt.set(m, s = { prev: floor, hist: [], pend: 0, until: 0 });
+    const [cur] = mic.levels(micBuf, sr, fft, [m]);
+    if (mic.onset(s.prev, cur, s.hist)) s.pend = 3; // attaque : on laisse 3 analyses pour que detect() confirme
+    s.prev = isFinite(cur) ? cur : floor;
+    if (s.pend > 0) {
+      if (found.has(m) && now > s.until) { s.pend = 0; s.until = now + 300; press(m, 'mic' + m, 0.8, true, micLat * bps()); setTimeout(() => release('mic' + m), 150); }
+      else s.pend--;
+    }
   }
-  for (const m of [...micActive]) if (!exp.has(m)) micActive.delete(m);
+  for (const m of micSt.keys()) if (!exp.has(m)) micSt.delete(m);
 }
 function expectedNow() {
   if (!G) return [];
@@ -210,6 +231,7 @@ function startGame(song, warning, opts = {}) {
   const o = { mode: settings.mode, hands: settings.hands, speed: settings.speed, ...opts };
   let src = song.notes;
   if (o.from != null) { src = src.filter(n => n[1] >= o.from - 1e-6 && n[1] < o.to - 1e-6); if (!src.length) src = song.notes; }
+  if (o.zones) { const z = src.filter(n => o.zones.some(([a, b]) => n[1] >= a - 1e-6 && n[1] < b - 1e-6)); if (z.length) src = z; } // hors zone : retirées (muettes, non requises) ; le départ saute à la 1re zone
   const notes = src.map(([m, s, d, h, f]) => ({ m, s, d, h, f, hit: 0, miss: false, req: false }));
   notes.sort((a, b) => a.s - b.s || a.m - b.m);
   notes.forEach(n => { n.req = o.mode !== 'demo' && (o.hands === 'both' || o.hands === n.h); });
@@ -260,7 +282,8 @@ function update(dt) {
   for (; G.ai < G.notes.length; G.ai++) {
     const n = G.notes[G.ai]; if (n.s > G.t) break;
     if ((!n.req || G.mode === 'demo') && !G.mic) {
-      const v = voiceOn(n.m, 0.6); setTimeout(() => v.off(), Math.max(120, n.d / bps() * 950));
+      const v = voiceOn(n.m, 0.6), id = setTimeout(() => { v.off(); autoV.delete(id); }, Math.max(120, n.d / bps() * 950));
+      autoV.set(id, v);
     }
     if (G.mode === 'demo') n.hit = 1;
   }
@@ -269,13 +292,14 @@ function update(dt) {
 }
 
 function finish() {
-  const g = G; G = null; stopMic(); pressed.clear();
+  const g = G; G = null; stopMic(); stopAuto(); pressed.clear();
   held.forEach(v => v.off()); held.clear();
   $('#game').hidden = true;
   if (g.mode === 'demo') { $('#home').hidden = false; learn.refresh(); return; }
   const score = Math.max(0, g.hits - g.wrong * 0.5) / Math.max(1, g.total);
   const stars = score >= 0.95 ? 3 : score >= 0.8 ? 2 : score >= 0.5 ? 1 : 0;
   learn.onTime(g.secs);
+  if (g.opts.work) return workDone(g);
   // mesures (4 temps) contenant au moins une note requise non jouée
   const weak = [...new Set(g.req.filter(n => !n.hit).map(n => Math.floor(n.s / 4) + 1))].sort((a, b) => a - b);
   const next = g.opts.onDone?.({ stars, score, hits: g.hits, total: g.total, wrong: g.wrong, secs: g.secs, weak });
@@ -289,14 +313,43 @@ function finish() {
   $('#result').hidden = false;
   $('#again').onclick = () => { $('#result').hidden = true; begin(g.song, g.opts); };
   $('#toMenu').onclick = () => { $('#result').hidden = true; $('#home').hidden = false; learn.refresh(); };
+  $('#work').hidden = !weak.length;
+  $('#work').onclick = () => {
+    $('#result').hidden = true;
+    const base = g.opts, orig = base.speed ?? settings.speed;
+    runWork(g.song, { zones: weak.map(k => [(k - 2) * 4, (k + 1) * 4]), orig, sp: Math.max(0.5 * orig, 0.8 * orig), ok: 0, base });
+  };
+}
+
+/* ----- « Répète le passage » : boucle sur les mesures ratées (± 1 mesure), sans XP ni onDone ----- */
+function runWork(song, w, msg) {
+  const opts = { ...w.base, zones: w.zones, speed: w.sp, work: w, onDone: null, label: 'Passage · ' + Math.round(w.sp / w.orig * 100) + ' % du tempo' };
+  begin(song, opts).then(() => { if (G && msg) flash(msg, '#34d399', 2500); });
+}
+function workDone(g) {
+  const w = g.opts.work, acc = g.hits / Math.max(1, g.total + g.wrong);
+  if (acc >= 0.85) w.ok++; else w.ok = 0;
+  if (w.ok >= 3) {
+    $('#stars').textContent = '★★★'; $('#resTitle').textContent = 'Passage maîtrisé !';
+    $('#resStats').textContent = 'Bravo, 3 réussites d\'affilée : ce passage est solide.';
+    $('#resWeak').textContent = ''; $('#hint').textContent = 'Prêt à rejouer le morceau entier ?';
+    $('#next').hidden = true; $('#work').hidden = true;
+    $('#again').onclick = () => { $('#result').hidden = true; begin(g.song, w.base); };
+    $('#toMenu').onclick = () => { $('#result').hidden = true; $('#home').hidden = false; learn.refresh(); };
+    $('#result').hidden = false; return;
+  }
+  let msg;
+  if (acc >= 0.85) { if (w.ok === 2) w.sp = Math.min(w.orig, w.sp + 0.05 * w.orig); msg = `Bien joué ! ${w.ok}/3`; }
+  else { w.sp = Math.max(0.5 * w.orig, w.sp - 0.1 * w.orig); msg = 'On y retourne, un peu plus doucement'; }
+  runWork(g.song, w, msg);
 }
 
 /* ----- saisie ----- */
-function press(m, key, vel = 0.85, silent = false) {
+function press(m, key, vel = 0.85, silent = false, lat = 0) {
   if (!silent) { held.get(key)?.off(); held.set(key, voiceOn(m, vel)); }
   pressed.set(m, Infinity);
   if (!G || G.paused) return;
-  judge(m);
+  judge(m, lat);
 }
 function release(key) {
   const v = held.get(key); if (v) { v.off(); held.delete(key); }
@@ -305,20 +358,21 @@ function release(key) {
   // touche écran : retrouve la note
   for (const [k, mm] of keyOwner) if (k === key) { pressed.delete(mm); keyOwner.delete(k); }
 }
-function judge(m) {
+function judge(m, lat = 0) {
   if (G.mode === 'demo') return;
   let cand = null;
+  const t = G.t - lat; // temps de jugement corrigé de la latence micro (en temps de partition)
   if (G.mode === 'wait') {
     for (let i = G.gi; i < G.req.length; i++) {
-      const n = G.req[i]; if (n.s > G.t + 0.3) break;
+      const n = G.req[i]; if (n.s > t + 0.3) break;
       if (!n.hit && n.m === m) { cand = n; break; }
     }
   } else {
     let bd = 1e9;
     for (let i = G.mi; i < G.req.length; i++) {
-      const n = G.req[i]; if (n.s > G.t + 0.5) break;
+      const n = G.req[i]; if (n.s > t + 0.5) break;
       if (n.hit || n.miss || n.m !== m) continue;
-      const d = Math.abs(n.s - G.t); if (d <= 0.4 && d < bd) { bd = d; cand = n; }
+      const d = Math.abs(n.s - t); if (d <= 0.4 && d < bd) { bd = d; cand = n; }
     }
     if (cand) flash(bd < 0.12 ? 'Parfait !' : bd < 0.25 ? 'Bien' : 'Un peu décalé', bd < 0.12 ? '#34d399' : bd < 0.25 ? '#60a5fa' : '#fbbf24');
   }
@@ -487,11 +541,11 @@ function loop(now) {
   if (G) { draw(); requestAnimationFrame(loop); }
 }
 
-$('#pauseBtn').onclick = () => { G.paused = true; $('#pause').hidden = false; };
+$('#pauseBtn').onclick = () => { G.paused = true; stopAuto(); $('#pause').hidden = false; };
 $('#resume').onclick = () => { G.paused = false; G.last = performance.now(); $('#pause').hidden = true; };
-$('#quit').onclick = () => { learn.onTime(G.secs); learn.refresh(); G.mode = 'demo'; G.paused = false; $('#pause').hidden = true; G.t = Infinity; $('#home').hidden = false; $('#game').hidden = true; G = null; stopMic(); held.forEach(v => v.off()); held.clear(); pressed.clear(); };
+$('#quit').onclick = () => { learn.onTime(G.secs); learn.refresh(); G.mode = 'demo'; G.paused = false; $('#pause').hidden = true; G.t = Infinity; $('#home').hidden = false; $('#game').hidden = true; G = null; stopMic(); stopAuto(); held.forEach(v => v.off()); held.clear(); pressed.clear(); };
 
 renderHome();
 learn.init({ store, begin });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
-window.__sp = { get G() { return G; }, press, startGame, settings, library: () => library };
+window.__sp = { get G() { return G; }, setLat(v) { micLat = +v; store.set('sp.micLat', micLat); }, press, startGame, settings, library: () => library };

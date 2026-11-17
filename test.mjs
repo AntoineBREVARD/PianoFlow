@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { detect, onset, calibrate, levels } from './mic.js';
 import { DEMOS } from './songs.js';
 import { parseMidi } from './parsers.js';
+import { placementLevel, QUESTIONS } from './placement.js';
 
 const SR = 44100, N = 16384, freq = m => 440 * 2 ** ((m - 69) / 12);
 let seed = 1; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5;
@@ -64,5 +65,11 @@ assert.deepEqual(run([[C4, .1]], [C4], { floor: floor + 90 }), [], 'note sous le
 assert.equal(typeof parseMidi, 'function');
 assert.ok(Array.isArray(DEMOS) && DEMOS.length > 0, 'DEMOS non vide');
 for (const d of DEMOS) assert.ok(d.title && d.notes.length > 0 && d.notes.every(n => Number.isFinite(n[0]) && n[1] >= 0), 'morceau valide : ' + d.title);
+
+// Test de placement
+assert.equal(placementLevel([false, false, false, false, false]), 1);
+assert.equal(placementLevel([true, true, true, true, true]), 6);
+assert.equal(placementLevel([true, false, true, false, true]), 3);
+assert.ok(QUESTIONS.every(q => q.ok < q.choices.length));
 
 console.log('OK : tous les tests passent (' + DEMOS.length + ' morceaux)');
