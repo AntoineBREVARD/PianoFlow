@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { summarize, levelOf, exportData, parseImport, fixPlan, fixProfile, esc } from './stats.js';
+import { summarize, levelOf, exportData, parseImport, fixPlan, fixProfile, esc, cardModel, cardLayout, CARD } from './stats.js';
 import { ALL } from './curriculum.js';
 
 const now = new Date(2026, 10, 17, 12); // 17 nov 2026 (mardi)
@@ -68,4 +68,13 @@ assert.equal(summarize({ 'sp.progress': { [a]: { stars: 1e9 } } }, now).lessons.
 assert.deepEqual(fixPlan({ days: 'x', minutes: 1e9, time: '<', start: -1 }), { days: [1, 3, 5], minutes: 10, start: 0, time: '18:00' });
 assert.equal(fixPlan('x'), null); assert.deepEqual(fixProfile({ xp: 'a', badges: 3 }), { xp: 0, hits: 0, badges: {} });
 assert.equal(esc(`<a href="x" onclick='y'>&`), '&lt;a href=&quot;x&quot; onclick=&#39;y&#39;&gt;&amp;');
+// carte de partage
+const cm = cardModel(s);
+assert.equal(cm.level, 'Niveau 2'); assert.equal(cm.streak, 2); assert.deepEqual(cm.chords, ['C', 'Am']);
+assert.equal(cardModel(summarize({}, now)).streak, 0);
+const one = s.calendar.map((c, i) => ({ ...c, min: i === 28 ? 5 : 0 })); // aujourd'hui vide, hier joué : la série d'hier compte
+assert.equal(cardModel({ ...s, calendar: one }).streak, 1);
+const many = cardModel({ ...s, chords: Array.from({ length: 30 }, (_, i) => 'X' + i) }); assert.equal(many.chords.length, 14); assert.equal(many.more, 16);
+const ops = cardLayout(many); assert.ok(ops.length > 40);
+for (const o of ops) assert.ok(o.x >= 0 && o.y >= 0 && (o.k === 'text' ? o.x <= CARD.w && o.y <= CARD.h : o.x + o.w <= CARD.w + 0.5 && o.y + o.h <= CARD.h), JSON.stringify(o));
 console.log('test-stats OK');

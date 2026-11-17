@@ -3,6 +3,7 @@ import { DEMOS, compose } from './songs.js';
 import * as learn from './learn.js';
 import * as mic from './mic.js';
 import { createSynth } from './synth.js';
+import * as accomp from './accomp.js';
 
 const $ = s => document.querySelector(s);
 const NAMES = ['Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'];
@@ -14,13 +15,14 @@ const store = {
 };
 
 /* ============================ Audio (synthé piano) ============================ */
-let ac, master, synth;
+let ac, master, synth, recDest;
 function audio() {
   if (!ac) {
     ac = new (window.AudioContext || window.webkitAudioContext)();
     master = ac.createGain(); master.gain.value = 0.6;
     const comp = ac.createDynamicsCompressor();
     master.connect(comp); comp.connect(ac.destination);
+    try { recDest = ac.createMediaStreamDestination(); master.connect(recDest); } catch { recDest = null; } // dérivation pour l'enregistrement
     try { synth = createSynth(ac, master); } catch { synth = null; }
   }
   if (ac.state === 'suspended') ac.resume();
@@ -54,7 +56,7 @@ function voiceOn(m, vel = 0.85) {
 }
 
 /* ============================ État ============================ */
-const settings = Object.assign({ mode: 'wait', hands: 'both', speed: 1, names: true, input: 'touch', metro: false, recall: false, piano: true }, store.get('sp.settings', {}));
+const settings = Object.assign({ mode: 'wait', hands: 'both', speed: 1, names: true, input: 'touch', metro: false, recall: false, piano: true, accomp: false, rec: false }, store.get('sp.settings', {}));
 let library = store.get('sp.library', []);
 let G = null;            // partie en cours
 const pressed = new Map(); // midi -> expiration (ms) pour l'affichage
@@ -125,19 +127,32 @@ $('#c_save').onclick = () => {
 
 // réglages généraux (leçons comprises) : entrée, noms de notes, décalage micro
 // options ajoutées en JS : métronome, mode « sans les notes »
-for (const [id, label] of [['p_metro', 'Métronome (clic) en mode rythme'], ['p_piano', 'Son de piano réaliste'], ['p_recall', 'Sans les notes (rappel actif) : les notes s’estompent']]) {
+for (const [id, label] of [['p_metro', 'Métronome (clic) en mode rythme'], ['p_piano', 'Son de piano réaliste'], ['p_recall', 'Sans les notes (rappel actif) : les notes s’estompent'], ['p_accomp', 'Accompagnement (basse ; percussions discrètes en mode rythme), pas avec le micro']]) {
   const l = document.createElement('label'); l.className = 'row'; l.innerHTML = `<input id="${id}" type="checkbox"> ${label}`;
   $('#p_close').parentElement.before(l);
 }
+{
+  const b = document.createElement('button'); b.id = 'p_rec'; b.type = 'button'; b.className = 'ghost';
+  const n = document.createElement('p'); n.className = 'hint'; n.textContent = 'Ton enregistrement reste sur ton appareil : rien n’est envoyé sur le réseau. Indisponible avec le micro.';
+  $('#p_close').parentElement.before(b, n);
+  b.onclick = () => { settings.rec = !settings.rec; refreshPrefs(); };
+}
+function refreshPrefs() {
+  const mic_ = $('#p_input').value === 'mic', ok = typeof MediaRecorder !== 'undefined';
+  $('#p_accomp').disabled = mic_; if (mic_) $('#p_accomp').checked = false;
+  const r = $('#p_rec'); r.disabled = mic_ || !ok; r.setAttribute('aria-pressed', String(!!settings.rec && !r.disabled));
+  r.textContent = r.disabled ? '🎙️ Enregistrer ma partie (indisponible)' : settings.rec ? '🎙️ Enregistrement activé (toucher pour couper)' : '🎙️ Enregistrer ma partie';
+}
+$('#p_input').addEventListener('change', refreshPrefs);
 $('#tabPrefs').onclick = () => $('#prefsBtn').onclick();
 $('#prefsBtn').onclick = () => {
-  $('#p_input').value = settings.input; $('#p_names').checked = settings.names; $('#p_metro').checked = settings.metro; $('#p_recall').checked = settings.recall; $('#p_piano').checked = settings.piano !== false;
+  $('#p_input').value = settings.input; $('#p_names').checked = settings.names; $('#p_metro').checked = settings.metro; $('#p_recall').checked = settings.recall; $('#p_piano').checked = settings.piano !== false; $('#p_accomp').checked = !!settings.accomp; refreshPrefs();
   $('#p_lat').value = micLat; $('#p_latVal').textContent = Math.round(micLat * 1000) + ' ms';
   $('#p_recal').textContent = 'Recalibrer le micro'; $('#prefs').hidden = false;
 };
 $('#p_lat').oninput = e => { micLat = +e.target.value; $('#p_latVal').textContent = Math.round(micLat * 1000) + ' ms'; store.set('sp.micLat', micLat); };
 $('#p_recal').onclick = () => { store.set('sp.micFloor', null); $('#p_recal').textContent = 'Recalibrage au prochain lancement ✓'; };
-$('#p_close').onclick = () => { settings.input = $('#p_input').value; settings.names = $('#p_names').checked; settings.metro = $('#p_metro').checked; settings.recall = $('#p_recall').checked; settings.piano = $('#p_piano').checked; store.set('sp.settings', settings); $('#prefs').hidden = true; };
+$('#p_close').onclick = () => { settings.input = $('#p_input').value; settings.names = $('#p_names').checked; settings.metro = $('#p_metro').checked; settings.recall = $('#p_recall').checked; settings.piano = $('#p_piano').checked; settings.accomp = $('#p_accomp').checked && settings.input !== 'mic'; if (settings.input === 'mic') settings.rec = false; store.set('sp.settings', settings); $('#prefs').hidden = true; };
 let setupSong = null;
 function openSetup(song) {
   setupSong = song; $('#setupTitle').textContent = song.title;
@@ -272,6 +287,7 @@ function startGame(song, warning, opts = {}) {
     t: notes[0].s - 3, gi: 0, mi: 0, ai: 0, end: notes.reduce((a, n) => Math.max(a, n.s + n.d), 0),
     maxD: notes.reduce((a, n) => Math.max(a, n.d), 0), total: req.length, hits: 0, wrong: 0, missed: 0, streak: 0, best: 0, parts: [], rings: [], bad: null, pop: 0, hud: ['', ''], paused: false, last: performance.now(), beat: Math.floor(notes[0].s - 3) - 1, lastAct: performance.now(), flash: null, mic: settings.input === 'mic',
   };
+  startAccomp(notes, song); startRec();
   $('#home').hidden = true; $('#result').hidden = true; $('#game').hidden = false;
   $('#pause').hidden = true; $('#hudTitle').textContent = o.label || song.title;
   resize();
@@ -282,13 +298,56 @@ function startGame(song, warning, opts = {}) {
 
 let wake = null;
 function keepAwake() { try { navigator.wakeLock?.request('screen').then(w => { wake = w; }).catch(() => { }); } catch { } }
-function pauseGame() { G.paused = true; stopAuto(); $('#pause').hidden = false; }
+function pauseGame() { G.paused = true; stopAuto(); stopAccomp(); $('#pause').hidden = false; }
 // en arrière-plan : pause auto (le temps de jeu ne saute jamais, Reprendre remet G.last à zéro)
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { if (G && !G.paused) pauseGame(); return; }
   if (G) { G.last = performance.now(); if (!wake || wake.released) keepAwake(); }
   slowT = 0; slowN = 0;
 });
+
+/* ----- accompagnement (jamais avec le micro) ----- */
+function startAccomp(notes, song) {
+  stopAccomp(); if (!G) return;
+  if (!settings.accomp || settings.input === 'mic') return;
+  try {
+    const evs = accomp.events(notes.map(n => [n.m, n.s, n.d, n.h]), song.bpm || 100, { rhythm: G.mode === 'rhythm', timeSig: song.timeSig || '4/4', grid: song.grid, from: Math.max(0, notes[0].s - 3) });
+    G.acc = accomp.createAccomp(audio(), master, evs, { volume: 0.5 });
+  } catch { G.acc = null; }
+}
+function stopAccomp() { try { G?.acc?.stop(); } catch { } if (G) G.acc = null; }
+
+/* ----- enregistrement de la partie (local uniquement) ----- */
+let rec = null, recUrl = null, recBlob = null;
+function startRec() {
+  rec = null; if (recUrl) { URL.revokeObjectURL(recUrl); recUrl = null; } recBlob = null;
+  if (!settings.rec || settings.input === 'mic' || typeof MediaRecorder === 'undefined') return;
+  audio(); if (!recDest) return;
+  try {
+    const chunks = [], r = new MediaRecorder(recDest.stream);
+    r.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    r.onstop = () => { if (r.keep && chunks.length) { recBlob = new Blob(chunks, { type: r.mimeType || 'audio/webm' }); if (!$('#result').hidden) showRec(); } };
+    r.start(); rec = r;
+  } catch { rec = null; }
+}
+function endRec(keep) { const r = rec; rec = null; if (r && r.state !== 'inactive') { r.keep = keep; try { r.stop(); } catch { } } }
+function showRec() {
+  let box = $('#recBox');
+  if (!box) {
+    box = document.createElement('div'); box.id = 'recBox'; box.className = 'actions'; box.hidden = true;
+    box.innerHTML = '<button id="recPlay" class="ghost" type="button">▶ Réécouter</button><button id="recShare" class="ghost" type="button">Partager / Télécharger</button><p class="hint" style="flex-basis:100%;margin:0">Enregistrement local, jamais envoyé sur le réseau.</p>';
+    $('#result .actions').before(box);
+    let au = null;
+    $('#recPlay').onclick = () => { if (!recBlob) return; if (au && !au.paused) { au.pause(); $('#recPlay').textContent = '▶ Réécouter'; return; } recUrl ||= URL.createObjectURL(recBlob); au = new Audio(recUrl); au.onended = () => { $('#recPlay').textContent = '▶ Réécouter'; }; au.play().catch(() => { }); $('#recPlay').textContent = '⏸ Pause'; };
+    $('#recShare').onclick = async () => {
+      if (!recBlob) return;
+      const ext = /mp4/.test(recBlob.type) ? 'm4a' : 'webm', file = new File([recBlob], 'pianoflow-ma-partie.' + ext, { type: recBlob.type });
+      try { if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: 'Ma partie PianoFlow' }); return; } } catch (e) { if (e.name === 'AbortError') return; }
+      const u = URL.createObjectURL(recBlob), a = document.createElement('a'); a.href = u; a.download = file.name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000);
+    };
+  }
+  box.hidden = !recBlob;
+}
 
 // métronome : clic synthétisé discret (accent sur le 1er temps de mesure)
 function click(accent) {
@@ -323,6 +382,7 @@ function update(dt) {
       if (n.s < G.t - 0.4) { n.miss = true; G.missed++; G.streak = 0; } else break;
     }
   }
+  if (G.acc && !G.paused) G.acc.tick(G.t, bps());
   // sons automatiques (main non travaillée / mode démo). Muet avec le micro pour éviter le larsen.
   for (; G.ai < G.notes.length; G.ai++) {
     const n = G.notes[G.ai]; if (n.s > G.t) break;
@@ -337,7 +397,7 @@ function update(dt) {
 }
 
 function finish() {
-  const g = G; G = null; stopMic(); stopAuto(); pressed.clear();
+  const g = G; stopAccomp(); G = null; stopMic(); stopAuto(); pressed.clear(); endRec(true);
   held.forEach(v => v.off()); held.clear();
   $('#game').hidden = true;
   if (g.mode === 'demo') { $('#home').hidden = false; learn.refresh(); return; }
@@ -355,7 +415,7 @@ function finish() {
   const acc = Math.round(g.hits / Math.max(1, g.total + g.wrong) * 100);
   $('#resStats').textContent = `Précision ${acc} % · ${g.hits} justes · ${g.total - g.hits} ratées · ${g.wrong} fausses · meilleur enchaînement ${g.best}`;
   $('#resWeak').textContent = weak.length ? 'Mesures à retravailler : ' + weak.slice(0, 8).join(', ') : 'Aucune mesure à retravailler, bravo !';
-  $('#result').hidden = false;
+  $('#result').hidden = false; showRec();
   $('#again').onclick = () => { $('#result').hidden = true; begin(g.song, g.opts); };
   $('#toMenu').onclick = () => { $('#result').hidden = true; $('#home').hidden = false; learn.refresh(); };
   $('#work').hidden = !weak.length;
@@ -602,8 +662,8 @@ function loop(now) {
 }
 
 $('#pauseBtn').onclick = pauseGame;
-$('#resume').onclick = () => { G.paused = false; G.last = G.lastAct = performance.now(); $('#pause').hidden = true; };
-$('#quit').onclick = () => { learn.onTime(G.secs); learn.refresh(); G.mode = 'demo'; G.paused = false; $('#pause').hidden = true; G.t = Infinity; $('#home').hidden = false; $('#game').hidden = true; G = null; stopMic(); stopAuto(); held.forEach(v => v.off()); held.clear(); pressed.clear(); };
+$('#resume').onclick = () => { G.paused = false; startAccomp(G.notes, G.song); G.last = G.lastAct = performance.now(); $('#pause').hidden = true; };
+$('#quit').onclick = () => { learn.onTime(G.secs); learn.refresh(); G.mode = 'demo'; G.paused = false; $('#pause').hidden = true; G.t = Infinity; $('#home').hidden = false; $('#game').hidden = true; stopAccomp(); G = null; stopMic(); stopAuto(); endRec(false); held.forEach(v => v.off()); held.clear(); pressed.clear(); };
 
 renderHome();
 learn.init({ store, begin });

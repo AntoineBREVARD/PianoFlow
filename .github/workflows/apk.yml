@@ -36,7 +36,7 @@ jobs:
           const src=fs.readFileSync('sw.js','utf8');
           const files=eval(src.match(/const FILES = (\[[^\]]*\])/)[1]).filter(f=>f!=='./');
           const miss=files.filter(f=>!fs.existsSync('www/'+f));
-          for(const m of ['chords.js','train.js','reading.js','ear.js','stats.js','synth.js','mic.js','placement.js']) if(!fs.existsSync('www/'+m)) miss.push(m);
+          for(const m of ['chords.js','train.js','reading.js','ear.js','stats.js','synth.js','mic.js','placement.js','notify.js']) if(!fs.existsSync('www/'+m)) miss.push(m);
           if(fs.existsSync('www/sw.js')) miss.push('www/sw.js (devrait être retiré)');
           if(miss.length){console.error('Fichiers manquants/incohérents :',[...new Set(miss)].join(', '));process.exit(1)}
           console.log('cache OK :',files.length,'fichiers présents dans www')"
@@ -46,7 +46,7 @@ jobs:
           npx cap add android
           npx cap sync android
           # micro (mode "vrai piano") et audio
-          sed -i 's#<application#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <application#' android/app/src/main/AndroidManifest.xml
+          sed -i 's#<application#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <application#' android/app/src/main/AndroidManifest.xml
       - name: Compiler l'APK
         working-directory: android
         run: for i in 1 2 3; do ./gradlew assembleDebug --no-daemon && exit 0; echo "tentative $i échouée"; sleep 45; done; exit 1
