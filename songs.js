@@ -41,4 +41,13 @@ export const DEMOS = [
   make('Menuet en Sol (Petzold)', 100,
     'D5:1 G4:.5 A4:.5 B4:.5 C5:.5 | D5 G4 G4 | E5 C5:.5 D5:.5 E5:.5 F#5:.5 | G5 G4 G4',
     'G3+B3:3 | G3+B3:3 | C3+G3:3 | B2+D3:3'),
+  make('Mary avait un petit agneau', 100,
+    'E4 D4 C4 D4 | E4 E4 E4:2 | D4 D4 D4:2 | E4 G4 G4:2 | E4 D4 C4 D4 | E4 E4 E4 E4 | D4 D4 E4 D4 | C4:4',
+    'C3+G3:4 | C3+G3:4 | G2+D3:4 | C3+G3:4 | C3+G3:4 | C3+G3:4 | G2+D3:4 | C3+G3:4'),
+  make('Douce nuit', 80,
+    'G4:1.5 A4:.5 G4 | E4:3 | G4:1.5 A4:.5 G4 | E4:3 | D5:2 D5 | B4:3 | C5:2 C5 | G4:3 | A4:2 A4 | C5:1.5 B4:.5 A4 | G4:1.5 A4:.5 G4 | E4:3 | A4:2 A4 | C5:1.5 B4:.5 A4 | G4:1.5 A4:.5 G4 | E4:3 | D5:2 D5 | F5:1.5 D5:.5 B4 | C5:3 | E5:3 | C5 G4 E4 | G4:1.5 F4:.5 D4 | C4:3',
+    'C3+G3:3 | C3+G3:3 | C3+G3:3 | C3+G3:3 | G2+B2+D3:3 | G2+B2+D3:3 | C3+G3:3 | C3+G3:3 | F3+C4:3 | F3+C4:3 | C3+G3:3 | C3+G3:3 | F3+C4:3 | F3+C4:3 | C3+G3:3 | C3+G3:3 | G2+B2+D3:3 | G2+B2+D3:3 | C3+G3:3 | C3+G3:3 | C3+G3:3 | G2+B2+D3:3 | C3+G3:3'),
+  make('Korobeiniki (air de Tetris)', 120,
+    'E5 B4:.5 C5:.5 D5 C5:.5 B4:.5 | A4 A4:.5 C5:.5 E5 D5:.5 C5:.5 | B4:1.5 C5:.5 D5 E5 | C5 A4 A4:2',
+    'E3+B3:4 | A2+E3:4 | G#2+B2+E3:4 | A2+E3:4'),
 ];
