@@ -39,5 +39,12 @@ export const LEVELS = [
     fromDemo('4-4', 'Jingle Bells (refrain)', "Un morceau festif avec accompagnement.", 'Jingle Bells (refrain)'),
     fromDemo('4-5', 'Für Elise (début)', "Le défi du niveau : notes rapides et dièse. Vas-y lentement, la vitesse viendra.", 'Für Elise (début)', { speed: 0.7 }),
   ] },
+  { title: 'Niveau 5 · Premiers classiques', lessons: [
+    L('5-1', 'Gamme de Sol majeur', "Même gamme, mais un Fa♯ (touche noire) apparaît avant le Sol final : c'est ce qui donne la couleur de Sol majeur.", 'G4^1 A4^2 B4^3 C5^1 D5^2 E5^3 F#5^4 G5:2^5', null, 70),
+    L('5-2', 'Gamme de La mineur', "Pas de touche noire, mais une couleur plus triste : on commence sur La, une tierce plus bas.", 'A3^1 B3^2 C4^3 D4^4 E4^5 | D4^4 C4^3 B3^2 A3:2^1', null, 70),
+    L('5-3', "Basse d'Alberti", "La main gauche joue l'accord en arpège : bas – haut – milieu – haut. Un accompagnement classique de Mozart.", 'E4:2^3 G4:2^5 | E4:2^3 D4:2^2 | C4:4^1', 'C3^5 G3^1 E3^3 G3^1 | C3^5 G3^1 E3^3 G3^1 | C3^5 G3^1 E3^3 G3^1', 70),
+    fromDemo('5-4', 'Menuet en Sol (Petzold)', "Une danse à trois temps (longtemps attribuée à Bach). Le Fa♯ de la gamme de Sol revient ici.", 'Menuet en Sol (Petzold)', { speed: 0.8 }),
+    L('5-5', 'Canon de Pachelbel (début)', "Une basse qui descend, une mélodie qui l'accompagne : la progression d'accords la plus célèbre du monde.", 'F#5:2^3 E5:2^2 | D5:2^1 C#5:2^1 | B4:2^2 A4:2^1 | B4:2^2 C#5:2^3', 'D3:2^5 A2:2^5 | B2:2^4 F#2:2^5 | G2:2^5 D2:2^5 | G2:2^5 A2:2^5', 60, { speed: 0.8 }),
+  ] },
 ];
 export const ALL = LEVELS.flatMap((lv, li) => lv.lessons.map(l => ({ ...l, level: li })));
