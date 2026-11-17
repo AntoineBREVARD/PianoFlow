@@ -124,6 +124,81 @@ export function parseImport(text) {
   return Object.keys(data).length ? { data, warnings } : { error: 'Cette sauvegarde ne contient aucune donnée reconnue.' };
 }
 
+/* ---------- carte de partage (image PNG, aucune donnée personnelle) ---------- */
+export const CARD = { w: 1080, h: 1350 };
+const PAL = { bg: '#0b0e22', card: '#151a3a', line: '#262c5a', fg: '#eef1ff', mut: '#97a0cf', acc: '#38bdf8', acc2: '#818cf8' };
+const MAX_CHORDS = 14;
+const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
+// Données affichées (textes, tronquages) ; pure.
+export function cardModel(sm) {
+  const cal = sm.calendar || [];
+  let streak = 0, i = cal.length - 1;
+  if (i >= 0 && !(cal[i].min > 0)) i--; // aujourd'hui pas encore joué : la série d'hier compte
+  for (; i >= 0 && cal[i].min > 0; i--) streak++;
+  const chords = (sm.chords || []).slice(0, MAX_CHORDS), more = Math.max(0, (sm.chords || []).length - chords.length);
+  return {
+    title: "J'apprends le piano avec PianoFlow", brand: 'PianoFlow',
+    level: `Niveau ${sm.level.level}`, xp: `${sm.level.xp} XP`, pct: sm.level.pct,
+    streak, streakText: streak ? plural(streak, 'jour') + ' de suite' : 'Prêt à reprendre',
+    lessons: `${sm.lessons.done} / ${sm.lessons.total}`, lessonsLabel: 'leçons réussies',
+    chordsLabel: sm.chords?.length ? `Accords maîtrisés (${sm.chords.length})` : 'Accords : bientôt !',
+    chords, more, reading: `Lecture : palier ${sm.reading.done}/${sm.reading.total}`, ear: `Oreille : palier ${sm.ear.done}/${sm.ear.total}`,
+    days: cal.map(c => c.lvl), calLabel: '30 derniers jours', footer: 'Un peu chaque jour, à mon rythme.',
+  };
+}
+// Mise en page pure : liste d'opérations de dessin, testable sans canvas.
+export function cardLayout(m) {
+  const { w, h } = CARD, ops = [], M = 80;
+  const rect = (x, y, rw, rh, fill, r = 0, alpha = 1) => ops.push({ k: 'rect', x, y, w: rw, h: rh, fill, r, alpha });
+  const text = (t, x, y, size, fill, o = {}) => ops.push({ k: 'text', t, x, y, size, fill, weight: o.weight || 400, align: o.align || 'left', maxW: o.maxW || w - 2 * M });
+  rect(0, 0, w, h, PAL.bg);
+  text(m.brand, M, 120, 44, PAL.acc, { weight: 800 });
+  text(m.title, M, 190, 46, PAL.fg, { weight: 700 });
+  rect(M, 240, w - 2 * M, 200, PAL.card, 28);
+  text(m.level, M + 40, 320, 72, PAL.fg, { weight: 800, maxW: 560 }); text(m.xp, w - M - 40, 320, 40, PAL.mut, { align: 'right', maxW: 300 });
+  rect(M + 40, 360, w - 2 * M - 80, 24, PAL.line, 12); if (m.pct > 0) rect(M + 40, 360, Math.max(24, (w - 2 * M - 80) * m.pct / 100), 24, PAL.acc, 12);
+  const half = (w - 2 * M - 24) / 2;
+  rect(M, 470, half, 200, PAL.card, 28); text(String(m.streak), M + 40, 580, 96, PAL.acc, { weight: 800, maxW: half - 80 }); text(m.streakText, M + 40, 636, 32, PAL.mut, { maxW: half - 80 });
+  rect(M + half + 24, 470, half, 200, PAL.card, 28); text(m.lessons, M + half + 64, 580, 80, PAL.acc2, { weight: 800, maxW: half - 80 }); text(m.lessonsLabel, M + half + 64, 636, 32, PAL.mut, { maxW: half - 80 });
+  // accords : pastilles sur 2 lignes maximum
+  rect(M, 700, w - 2 * M, 250, PAL.card, 28); text(m.chordsLabel, M + 40, 756, 34, PAL.fg, { weight: 700 });
+  let x = M + 40, y = 790, row = 0;
+  for (const c of m.chords.concat(m.more ? ['+' + m.more] : [])) {
+    const cw = 36 + 24 * c.length;
+    if (x + cw > w - M - 40) { x = M + 40; y += 70; if (++row > 1) break; }
+    rect(x, y, cw, 54, PAL.line, 27); text(c, x + cw / 2, y + 38, 30, PAL.fg, { weight: 700, align: 'center', maxW: cw - 12 }); x += cw + 12;
+  }
+  text(m.reading, M, 1010, 36, PAL.fg, { weight: 600 }); text(m.ear, M, 1062, 36, PAL.fg, { weight: 600 });
+  text(m.calLabel, M, 1130, 30, PAL.mut);
+  const g = 10, cs = (w - 2 * M - 29 * g) / 30; // 30 cases sur une ligne
+  m.days.forEach((l, i) => rect(M + i * (cs + g), 1155, cs, cs, l ? PAL.acc : PAL.line, 6, l ? 0.3 + 0.175 * l : 1));
+  text(m.footer, M, 1290, 30, PAL.mut);
+  return ops;
+}
+function paint(ctx, ops) {
+  for (const o of ops) {
+    ctx.globalAlpha = o.alpha ?? 1; ctx.fillStyle = o.fill;
+    if (o.k === 'rect') { ctx.beginPath(); (o.r && ctx.roundRect) ? ctx.roundRect(o.x, o.y, o.w, o.h, o.r) : ctx.rect(o.x, o.y, o.w, o.h); ctx.fill(); }
+    else { ctx.font = `${o.weight} ${o.size}px system-ui,"Segoe UI",sans-serif`; ctx.textAlign = o.align; ctx.fillText(o.t, o.x, o.y, o.maxW); }
+  }
+  ctx.globalAlpha = 1;
+}
+export const renderCard = sm => {
+  const c = document.createElement('canvas'); c.width = CARD.w; c.height = CARD.h;
+  paint(c.getContext('2d'), cardLayout(cardModel(sm))); return c;
+};
+async function shareCard(sm) {
+  const blob = await new Promise(r => renderCard(sm).toBlob(r, 'image/png'));
+  if (!blob) return "Impossible de créer l'image.";
+  const file = new File([blob], 'pianoflow-progression.png', { type: 'image/png' });
+  if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+    try { await navigator.share({ files: [file], text: "J'apprends le piano avec PianoFlow" }); return "Merci d'avoir partagé !"; }
+    catch (e) { if (e.name === 'AbortError') return ''; }
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  return 'Image enregistrée : tu peux la partager où tu veux.';
+}
+
 /* ---------- UI ---------- */
 const CSS = `.st{display:grid;gap:12px;max-width:640px;margin:0 auto;color:var(--fg)}
 .st-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
@@ -162,11 +237,12 @@ export function mount(container, store) {
 <div class="st-grid"><section class="st-card"><h3>Lecture</h3>Palier ${s.reading.done} / ${s.reading.total}</section><section class="st-card"><h3>Oreille</h3>Palier ${s.ear.done} / ${s.ear.total}</section></div>
 <section class="st-card"><h3>Ce que tu sais jouer maintenant</h3>${s.known.length ? `<ul>${s.known.map(k => `<li>${esc(k)} ★★★</li>`).join('')}</ul>` : '<div class="st-mut">Obtiens ★★★ sur une leçon pour la voir apparaître ici.</div>'}</section>
 <section class="st-card"><h3>Prochaine étape conseillée</h3>${esc(s.next)}</section>
-<section class="st-card"><h3>Sauvegarde sans compte</h3><div class="st-act"><button class="ghost" id="st-exp">Exporter ma progression</button><button class="ghost" id="st-imp">Importer</button><input type="file" id="st-file" accept="application/json,.json" hidden></div><div class="st-mut st-note" role="status">${esc(note)}</div></section></div>`;
+<section class="st-card"><h3>Sauvegarde sans compte</h3><div class="st-act"><button class="ghost" id="st-exp">Exporter ma progression</button><button class="ghost" id="st-imp">Importer</button><button class="ghost" id="st-share">Partager ma progression</button><input type="file" id="st-file" accept="application/json,.json" hidden></div><div class="st-mut st-note" role="status">${esc(note)}</div></section></div>`;
     container.querySelector('#st-exp').onclick = () => {
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([exportData(load())], { type: 'application/json' }));
       a.download = `pianoflow-progression-${dkey(new Date())}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     };
+    container.querySelector('#st-share').onclick = async () => { const n = await shareCard(s); if (n) container.querySelector('.st-note').textContent = n; };
     const f = container.querySelector('#st-file');
     container.querySelector('#st-imp').onclick = () => f.click();
     f.onchange = async () => {

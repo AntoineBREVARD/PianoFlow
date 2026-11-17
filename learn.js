@@ -264,7 +264,8 @@ function planEditor(first) {
     <div class="dayrow">${ORDER.map(d => `<label class="day"><input type="checkbox" value="${d}" ${p.days.includes(d) ? 'checked' : ''}><span>${DOW[d]}</span></label>`).join('')}</div>
     <label>Durée d'une séance<select id="p_min">${[5, 10, 15, 20, 30, 45, 60].map(m => `<option ${m === p.minutes ? 'selected' : ''} value="${m}">${m} minutes</option>`).join('')}</select></label>
     <label>Heure du rappel<input id="p_time" type="time" value="${esc(p.time || '18:00')}"></label>
-    <div class="actions" style="justify-content:space-between"><button class="ghost" id="p_ics">📅 Rappels dans mon agenda</button><button class="primary" id="p_save">Enregistrer</button></div>`);
+    <div class="actions" style="justify-content:space-between"><button class="ghost" id="p_ics">📅 Rappels dans mon agenda</button><button class="primary" id="p_save">Enregistrer</button></div>
+    <div class="actions"><button class="ghost" id="p_off" type="button">🔕 Désactiver les rappels</button></div><p class="hint" id="p_note" role="status"></p>`);
   b.querySelectorAll('.chip').forEach(c => c.onclick = () => {
     const x = PRESETS[+c.dataset.i];
     b.querySelectorAll('.day input').forEach(i => { i.checked = x.days.includes(+i.value); }); $('#p_min').value = x.minutes;
@@ -274,7 +275,10 @@ function planEditor(first) {
     const r = read(); if (!r.days.length) { alert('Choisis au moins un jour.'); return; }
     plan = { ...p, ...r, start: first ? +($('#p_level')?.value || 0) : (p.start || 0) };
     H.store.set('sp.plan', plan); closeModal(); refresh();
+    // rappels natifs (APK) : jamais bloquant ; en navigateur, le bouton .ics reste l'alternative
+    import('./notify.js').then(m => m.schedule(plan)).then(r => { if (r?.native) alert(r.message); }).catch(() => {});
   };
+  $('#p_off').onclick = () => import('./notify.js').then(m => m.cancelAll()).then(n => { $('#p_note').textContent = n ? 'Rappels désactivés.' : 'Aucun rappel automatique dans le navigateur.'; }).catch(() => { $('#p_note').textContent = 'Impossible de désactiver les rappels.'; });
   if (first) $('#p_test').onclick = () => placementTest(lvl => { const o = $('#p_level'); if (o) o.value = o.querySelector(`option[data-lv="${lvl}"]`)?.value ?? 0; });
   $('#p_ics').onclick = () => { const r = read(); if (!r.days.length) { alert('Choisis au moins un jour.'); return; } downloadIcs(r); };
 }
