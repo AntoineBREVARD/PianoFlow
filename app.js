@@ -222,7 +222,7 @@ function startGame(song, warning, opts = {}) {
   G = {
     song, notes, req, lo, hi, mode: o.mode, sp: o.speed, opts: o, secs: 0,
     t: notes[0].s - 3, gi: 0, mi: 0, ai: 0, end: notes.reduce((a, n) => Math.max(a, n.s + n.d), 0),
-    total: req.length, hits: 0, wrong: 0, missed: 0, streak: 0, best: 0, paused: false, last: performance.now(), flash: null, mic: settings.input === 'mic',
+    total: req.length, hits: 0, wrong: 0, missed: 0, streak: 0, best: 0, parts: [], rings: [], bad: null, pop: 0, hud: ['', ''], paused: false, last: performance.now(), flash: null, mic: settings.input === 'mic',
   };
   $('#home').hidden = true; $('#result').hidden = true; $('#game').hidden = false;
   $('#pause').hidden = true; $('#hudTitle').textContent = o.label || song.title;
@@ -232,6 +232,7 @@ function startGame(song, warning, opts = {}) {
   requestAnimationFrame(loop);
 }
 
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 function flash(text, color, ms = 700) { G.flash = { text, color, until: performance.now() + ms, from: performance.now() }; }
 
 function bpmAt(t) {
@@ -275,12 +276,16 @@ function finish() {
   const score = Math.max(0, g.hits - g.wrong * 0.5) / Math.max(1, g.total);
   const stars = score >= 0.95 ? 3 : score >= 0.8 ? 2 : score >= 0.5 ? 1 : 0;
   learn.onTime(g.secs);
-  const next = g.opts.onDone?.({ stars, score, hits: g.hits, total: g.total, wrong: g.wrong, secs: g.secs });
+  // mesures (4 temps) contenant au moins une note requise non jouée
+  const weak = [...new Set(g.req.filter(n => !n.hit).map(n => Math.floor(n.s / 4) + 1))].sort((a, b) => a - b);
+  const next = g.opts.onDone?.({ stars, score, hits: g.hits, total: g.total, wrong: g.wrong, secs: g.secs, weak });
   $('#next').hidden = !next?.run; $('#hint').textContent = next?.hint || '';
   if (next?.run) { $('#next').textContent = next.label; $('#next').onclick = () => { $('#result').hidden = true; $('#home').hidden = false; learn.refresh(); next.run(); }; }
   $('#stars').textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
   $('#resTitle').textContent = g.opts.label || g.song.title;
-  $('#resStats').textContent = `${g.hits}/${g.total} notes justes · ${g.wrong} fausses · série max ${g.best}`;
+  const acc = Math.round(g.hits / Math.max(1, g.total + g.wrong) * 100);
+  $('#resStats').textContent = `Précision ${acc} % · ${g.hits} justes · ${g.total - g.hits} ratées · ${g.wrong} fausses · meilleur enchaînement ${g.best}`;
+  $('#resWeak').textContent = weak.length ? 'Mesures à retravailler : ' + weak.slice(0, 8).join(', ') : 'Aucune mesure à retravailler, bravo !';
   $('#result').hidden = false;
   $('#again').onclick = () => { $('#result').hidden = true; begin(g.song, g.opts); };
   $('#toMenu').onclick = () => { $('#result').hidden = true; $('#home').hidden = false; learn.refresh(); };
@@ -317,8 +322,22 @@ function judge(m) {
     }
     if (cand) flash(bd < 0.12 ? 'Parfait !' : bd < 0.25 ? 'Bien' : 'Un peu décalé', bd < 0.12 ? '#34d399' : bd < 0.25 ? '#60a5fa' : '#fbbf24');
   }
-  if (cand) { cand.hit = 1; G.hits++; G.streak++; G.best = Math.max(G.best, G.streak); }
-  else { G.wrong++; G.streak = 0; }
+  const r = G.keys.get(m), now = performance.now();
+  if (cand) {
+    cand.hit = 1; G.hits++; G.streak++; G.best = Math.max(G.best, G.streak);
+    if (r && !RM) {
+      const x = r.x + r.w / 2, y = G.hitY;
+      G.rings.push({ x, y, t: now });
+      for (let i = 0; i < 14; i++) {
+        const a = Math.PI * (1 + Math.random()), v = 60 + Math.random() * 140;
+        G.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: now, c: i % 2 ? '#34d399' : '#fde68a' });
+      }
+    }
+    if (G.streak % 5 === 0) G.pop = now;
+  } else {
+    G.wrong++; G.streak = 0;
+    G.bad = { m, t: now };
+  }
 }
 
 /* ----- clavier à l'écran ----- */
@@ -370,7 +389,8 @@ const COL = { R: ['#38bdf8', '#0ea5e9'], L: ['#fb923c', '#ea580c'] };
 
 function draw() {
   const { W, H, hitY, ppb } = G, now = performance.now();
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const bad = G.bad && now - G.bad.t < 350 ? G.bad : null, shk = bad && !RM ? Math.sin(now * 0.12) * 3 * (1 - (now - bad.t) / 350) : 0;
+  ctx.setTransform(dpr, 0, 0, dpr, shk * dpr, 0);
   const bg = ctx.createLinearGradient(0, 0, 0, hitY); bg.addColorStop(0, '#0b0e22'); bg.addColorStop(1, '#171b3d');
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
   // lignes de touches
@@ -427,9 +447,36 @@ function draw() {
     ctx.globalAlpha = a; ctx.fillStyle = G.flash.color; ctx.font = '700 26px system-ui'; ctx.textAlign = 'center';
     ctx.fillText(G.flash.text, W / 2, hitY - 24); ctx.globalAlpha = 1;
   }
-  // HUD
-  $('#hudScore').textContent = G.mode === 'demo' ? 'Démo' : `${G.hits}/${G.total}` + (G.streak > 2 ? ` · 🔥${G.streak}` : '');
-  $('#bar').style.width = Math.max(0, Math.min(100, (G.t - G.notes[0].s + 3) / (G.end - G.notes[0].s + 3) * 100)) + '%';
+  // flash rouge doux sur la colonne d'une fausse note
+  if (bad) {
+    const r = G.keys.get(bad.m);
+    if (r) { ctx.fillStyle = `rgba(248,113,113,${0.25 * (1 - (now - bad.t) / 350)})`; ctx.fillRect(r.x, 0, r.w, G.H); }
+  }
+  // anneaux et particules (600 ms)
+  for (let i = G.rings.length - 1; i >= 0; i--) {
+    const p = G.rings[i], k = (now - p.t) / 600; if (k >= 1) { G.rings.splice(i, 1); continue; }
+    ctx.strokeStyle = `rgba(52,211,153,${1 - k})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(p.x, p.y, 8 + k * 34, 0, 7); ctx.stroke();
+  }
+  for (let i = G.parts.length - 1; i >= 0; i--) {
+    const p = G.parts[i], s = (now - p.t) / 1000, k = s / 0.6; if (k >= 1) { G.parts.splice(i, 1); continue; }
+    ctx.globalAlpha = 1 - k; ctx.fillStyle = p.c;
+    ctx.fillRect(p.x + p.vx * s, p.y + p.vy * s + 400 * s * s, 4, 4);
+  }
+  ctx.globalAlpha = 1;
+  // compteur de combo : grossit tous les 5, paliers 10/25/50
+  if (G.streak >= 3 && G.mode !== 'demo') {
+    const tier = G.streak >= 50 ? 3 : G.streak >= 25 ? 2 : G.streak >= 10 ? 1 : 0;
+    const pop = RM ? 0 : Math.max(0, 1 - (now - G.pop) / 250) * 0.25;
+    const size = 20 + Math.min(G.streak, 50) / 5 * 3 + tier * 4;
+    ctx.fillStyle = ['#e2e8f0', '#fde68a', '#fbbf24', '#f59e0b'][tier];
+    ctx.font = `800 ${size * (1 + pop)}px system-ui`; ctx.textAlign = 'center';
+    ctx.fillText(`x${G.streak}`, W / 2, 80 + size / 2);
+  }
+  // HUD : DOM écrit seulement si la valeur change
+  const hs = G.mode === 'demo' ? 'Démo' : `${G.hits}/${G.total}` + (G.streak > 2 ? ` · 🔥${G.streak}` : '');
+  const bw2 = Math.max(0, Math.min(100, (G.t - G.notes[0].s + 3) / (G.end - G.notes[0].s + 3) * 100)).toFixed(1) + '%';
+  if (G.hud[0] !== hs) $('#hudScore').textContent = G.hud[0] = hs;
+  if (G.hud[1] !== bw2) $('#bar').style.width = G.hud[1] = bw2;
 }
 
 let micFrame = 0;

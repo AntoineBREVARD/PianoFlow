@@ -1,7 +1,7 @@
 {
   "name": "PianoFlow – Apprends le piano gratuitement",
   "short_name": "PianoFlow",
-  "description": "Apprends le piano sans lire de partition : 33 leçons, notes qui tombent, import MIDI/MusicXML, gratuit et hors ligne.",
+  "description": "Apprends le piano sans lire de partition : 54 leçons, notes qui tombent, import MIDI/MusicXML, gratuit et hors ligne.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
