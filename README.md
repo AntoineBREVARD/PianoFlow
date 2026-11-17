@@ -16,5 +16,5 @@ Limites connues : da capo/coda/segno non gérés ; les reprises simples, voltas 
 MuseScore Studio (musescore.org) est gratuit et exporte en .mxl/.mid. Des fichiers MIDI/MusicXML gratuits : piano-midi.de, Mutopia, IMSLP, BitMidi.
 On peut aussi écrire un morceau directement dans l'appli (« Écrire un morceau en texte »).
 
-## Publication (GitHub Pages)
-Réglages du dépôt → Pages → Source : **GitHub Actions**. Le workflow `.github/workflows/pages.yml` déploie à chaque push sur `main`.
+## APK Android
+Le workflow `.github/workflows/apk.yml` construit l'APK à chaque push : Actions → Build PianoFlow APK → artefact `PianoFlow-apk`.
