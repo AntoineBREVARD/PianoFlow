@@ -29,12 +29,15 @@ input[type=range]{padding:0;height:44px}
 input[type=checkbox]{width:24px;height:24px;flex:none;accent-color:var(--acc2)}
 .sheet label.row{min-height:44px}
 .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
-#result .actions,#pause .actions{justify-content:center}
+#result .actions,#pause .actions{justify-content:center;flex-wrap:wrap}
 #stars{font-size:56px;color:#fbbf24;letter-spacing:6px}
 #game{position:fixed;inset:0}
 #cv{display:block;touch-action:none;user-select:none}
 #hud{position:fixed;top:0;left:0;right:0;display:flex;gap:10px;align-items:center;padding:max(8px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) 8px max(10px,env(safe-area-inset-left));pointer-events:none}
+#hud{z-index:5;padding-bottom:14px;background:linear-gradient(#0b0e22 0,rgba(11,14,34,.92) 60%,rgba(11,14,34,0))}
 #hud>*{pointer-events:auto}
+#hudMid,#hudTitle{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#trReadBox #rdq,#trEarBox #eaq{display:none}
 #hud button{padding:6px 12px;background:rgba(21,26,58,.7)}
 #hudMid{flex:1;min-width:0;font-size:14px;color:var(--mut)}
 #hudTitle{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
