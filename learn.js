@@ -18,7 +18,7 @@ export function init(host) {
   H = host;
   progress = H.store.get('sp.progress', {}); plan = H.store.get('sp.plan', null);
   wk = H.store.get('sp.week', null); days = H.store.get('sp.days', {}); guidedP = H.store.get('sp.guided', {});
-  document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => tab(b.dataset.tab));
+  document.querySelectorAll('#tabs button[data-tab]').forEach(b => b.onclick = () => tab(b.dataset.tab));
   $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
   tab(H.store.get('sp.tab', 'today'));
 }
@@ -33,7 +33,7 @@ export function onTime(secs) {
 function tab(name) {
   H.store.set('sp.tab', name);
   for (const t of ['today', 'course', 'songs']) $('#tab-' + t).hidden = t !== name;
-  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  document.querySelectorAll('#tabs button[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
   refresh(); scrollTo(0, 0);
 }
 function modal(html) { $('#modalBody').innerHTML = html; $('#modal').hidden = false; return $('#modalBody'); }

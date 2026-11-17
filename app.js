@@ -119,6 +119,7 @@ $('#c_save').onclick = () => {
 };
 
 // réglages généraux (leçons comprises) : entrée, noms de notes, décalage micro
+$('#tabPrefs').onclick = () => $('#prefsBtn').onclick();
 $('#prefsBtn').onclick = () => {
   $('#p_input').value = settings.input; $('#p_names').checked = settings.names;
   $('#p_lat').value = micLat; $('#p_latVal').textContent = Math.round(micLat * 1000) + ' ms';
