@@ -2,7 +2,11 @@
   "name": "pianoflow",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "PianoFlow - appli piano (PWA + APK Android via Capacitor)",
+  "scripts": {
+    "test": "node test.mjs"
+  },
   "dependencies": {
     "@capacitor/android": "^6.1.2",
     "@capacitor/cli": "^6.1.2",

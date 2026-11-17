@@ -2,7 +2,7 @@
 import { LEVELS, ALL } from './curriculum.js';
 
 const $ = s => document.querySelector(s);
-let planAsked = false, H = null, progress = {}, plan = null, days = {}, guidedP = {};
+let planAsked = false, freezeUsed = false, wk = null, H = null, progress = {}, plan = null, days = {}, guidedP = {};
 const dkey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const DOW = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
 const ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -16,7 +16,7 @@ const PRESETS = [
 export function init(host) {
   H = host;
   progress = H.store.get('sp.progress', {}); plan = H.store.get('sp.plan', null);
-  days = H.store.get('sp.days', {}); guidedP = H.store.get('sp.guided', {});
+  wk = H.store.get('sp.week', null); days = H.store.get('sp.days', {}); guidedP = H.store.get('sp.guided', {});
   document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => tab(b.dataset.tab));
   $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
   tab(H.store.get('sp.tab', 'today'));
@@ -25,7 +25,7 @@ export function refresh() { renderToday(); renderCourse(); }
 export function onTime(secs) {
   if (!(secs > 0)) return;
   const d = (days[dkey()] ||= { sec: 0, done: [] }); d.sec += secs;
-  H.store.set('sp.days', days);
+  H.store.set('sp.days', days); wkGet().sec += secs; H.store.set('sp.week', wk);
 }
 
 /* ---------- helpers ---------- */
@@ -40,31 +40,53 @@ function closeModal() { $('#modal').hidden = true; }
 const stars = l => progress[l.id]?.stars || 0;
 const done = l => stars(l) >= 1;
 const unlocked = i => i <= (plan?.start || 0) || !!progress[ALL[i].id] || (i > 0 && done(ALL[i - 1]));
-const BADGES = { first: ['🎹', 'Première leçon'], star3: ['⭐', 'Trois étoiles'], lvl: ['🎓', 'Niveau terminé'], streak3: ['🔥', '3 jours de suite'], notes100: ['🎵', '100 notes justes'] };
+const BADGES = {
+  first: ['🎹', 'Première leçon', 'Réussis ta première leçon'], star3: ['⭐', 'Trois étoiles', 'Obtiens ★★★ sur une leçon'], lvl: ['🎓', 'Niveau terminé', 'Termine toutes les leçons du niveau'],
+  streak3: ['🔥', '3 jours de suite', 'Série de 3 jours'], notes100: ['🎵', '100 notes justes', 'Joue 100 notes justes'],
+  review: ['🔁', 'Première révision', 'Rejoue avec succès une leçon déjà réussie'], week: ['🎯', 'Objectif hebdo', 'Atteins les 3 cibles de la semaine'],
+  streak7: ['🌟', '7 jours de suite', 'Série de 7 jours'], lvl3: ['🚀', 'Niveau 3', 'Atteins le niveau 3 (XP)'], ten: ['📚', '10 leçons', 'Réussis 10 leçons'],
+};
 const profile = () => H.store.get('sp.profile', { xp: 0, hits: 0, badges: {} });
 const levelOf = xp => Math.floor(Math.sqrt(xp / 50)) + 1;
+function wkey(d = new Date()) { const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7)); const y = t.getUTCFullYear(); return y + '-W' + Math.ceil(((t - Date.UTC(y, 0, 1)) / 864e5 + 1) / 7); }
+function wkGet() { const id = wkey(); if (!wk || wk.id !== id) wk = { id, sec: 0, lessons: 0, reviews: 0 }; return wk; }
+const goals = () => { const w = wkGet(); return [['⏱ Minutes jouées', Math.floor(w.sec / 60), plan.minutes * plan.days.length], ['🎹 Leçons réussies', w.lessons, 3], ['🔁 Révisions', w.reviews, 2]]; };
+const weekDone = () => !!plan && goals().every(g => g[1] >= g[2]);
+function grant(p, s, l) {
+  const got = [], t = {
+    first: s?.stars >= 1, star3: s?.stars >= 3, notes100: p.hits >= 100, streak3: streak() >= 3, streak7: streak() >= 7, lvl3: levelOf(p.xp) >= 3,
+    ten: ALL.filter(done).length >= 10, review: !!s?.review, week: weekDone(), lvl: s?.stars >= 1 && LEVELS[l.level].lessons.every(x => done(x) || x.id === l.id),
+  };
+  for (const k in t) if (t[k] && !p.badges[k]) { p.badges[k] = Date.now(); got.push(BADGES[k][0] + ' ' + BADGES[k][1]); }
+  return got;
+}
 function award(l, s) {
   const p = profile(), before = levelOf(p.xp), gain = s.stars >= 1 ? 10 + s.stars * 10 + (s.hits || 0) : 2;
   p.xp += gain; p.hits += s.hits || 0;
-  const got = [], give = k => { if (!p.badges[k]) { p.badges[k] = Date.now(); got.push(BADGES[k][0] + ' ' + BADGES[k][1]); } };
-  if (s.stars >= 1) give('first'); if (s.stars >= 3) give('star3'); if (p.hits >= 100) give('notes100'); if (streak() >= 3) give('streak3');
-  if (s.stars >= 1 && LEVELS[l.level].lessons.every(x => done(x) || x.id === l.id)) give('lvl');
+  const got = grant(p, s, l);
   H.store.set('sp.profile', p);
   return gain + ' XP' + (levelOf(p.xp) > before ? ' · 🎉 Niveau ' + levelOf(p.xp) + ' !' : '') + (got.length ? ' · Nouveau : ' + got.join(', ') : '');
+}
+function badgesModal() {
+  const p = profile();
+  const b = modal(`<h2>🏅 Mes badges</h2><ul>${Object.entries(BADGES).map(([k, v]) => `<li style="display:flex;gap:10px;align-items:center;margin:8px 0;${p.badges[k] ? '' : 'opacity:.45;filter:grayscale(1)'}"><span style="font-size:28px">${v[0]}</span><div><b>${v[1]}</b><br><small>${p.badges[k] ? '✓ Obtenu' : v[2]}</small></div></li>`).join('')}</ul><div class="actions"><button class="primary" id="mOk">Fermer</button></div>`);
+  b.querySelector('#mOk').onclick = closeModal;
 }
 const SLEEP = '🌙 Ton cerveau range ce que tu as appris pendant la nuit : 10 minutes aujourd\'hui puis 10 demain valent mieux que 20 d\'un coup.';
 const starStr = n => '★'.repeat(n) + '☆'.repeat(3 - n);
 const scheduled = date => plan?.days.includes(date.getDay());
 const validated = key => (days[key]?.sec || 0) >= plan.minutes * 60 * 0.7;
 function streak() {
+  freezeUsed = false;
   if (!plan) return 0;
-  let n = 0; const d = new Date(); d.setHours(12);
+  let n = 0; const fz = {}; const d = new Date(); d.setHours(12);
   if (validated(dkey(d))) n++;
   for (let i = 1; i < 400; i++) {
     d.setDate(d.getDate() - 1);
     if (validated(dkey(d))) n++;
-    else if (scheduled(d)) break;
+    else if (scheduled(d)) { const k = wkey(d); if (fz[k]) break; fz[k] = 1; } // 1 gel gratuit par semaine
   }
+  freezeUsed = n > 0 && !!fz[wkey()];
   return n;
 }
 function weekDots() {
@@ -121,14 +143,16 @@ function renderToday() {
       <small class="mut">Aucune partition à lire · 3 min</small>
       ${fresh ? '<ul class="perks"><li>' + ALL.length + ' leçons progressives, du premier Do aux morceaux à deux mains</li><li>Importe tes partitions (MIDI, MusicXML) et apprends-les main par main</li><li>Gratuit et hors ligne, sur téléphone, tablette ou avec ton piano USB</li></ul><p class="hint">🪑 Assieds-toi dos droit, épaules relâchées, poignets souples, doigts arrondis comme si tu tenais une balle. Si ta main serre, fais une pause.</p>' : '<p class="hint">🌙 Ton cerveau range ce que tu as appris pendant la nuit : 10 minutes aujourd\'hui puis 10 demain valent mieux que 20 d\'un coup.</p>'}
     </section>` : '';
-  const pf = profile(), nb = Object.keys(pf.badges).length;
+  const pf = profile(); if (grant(pf).length) H.store.set('sp.profile', pf);
+  const nb = Object.keys(pf.badges).length;
   el.innerHTML = hero + `
-    <section class="card"><div class="status"><b>Niveau ${levelOf(pf.xp)}</b><span>${pf.xp} XP</span><span>🏅 ${nb}/${Object.keys(BADGES).length} badges</span></div>
+    <section class="card"><div class="status"><b>Niveau ${levelOf(pf.xp)}</b><span>${pf.xp} XP</span><button id="bdg" class="ghost">🏅 ${nb}/${Object.keys(BADGES).length} badges</button></div>
       <div class="progress"><div style="width:${(pf.xp - 50 * (levelOf(pf.xp) - 1) ** 2) / (50 * (2 * levelOf(pf.xp) - 1)) * 100}%"></div></div></section>
     <section class="card">
-      <div class="streak"><div class="big-n">🔥 ${sn}</div><div>${sn > 1 ? 'jours de suite' : sn === 1 ? 'jour validé' : 'Commence ta série aujourd\'hui !'}<br><small>Cette semaine : ${wk.ok}/${wk.goal} séances</small></div></div>
+      <div class="streak"><div class="big-n">🔥 ${sn}</div><div>${sn > 1 ? 'jours de suite' : sn === 1 ? 'jour validé' : 'Commence ta série aujourd\'hui !'}<br><small>Cette semaine : ${wk.ok}/${wk.goal} séances · ${freezeUsed ? '🧊 gel utilisé' : '🧊 gel disponible'}</small></div></div>
       <div class="dots">${wk.html}</div>
     </section>
+    <section class="card"><h2>Objectif de la semaine</h2>${goals().map(([t, v, m]) => `<small class="mut">${t} : ${Math.min(v, m)}/${m}${v >= m ? ' ✓' : ''}</small><div class="progress"><div style="width:${Math.min(100, v / m * 100)}%"></div></div>`).join('')}</section>
     <section class="card">
       <h2>${sch ? 'Séance du jour' : 'Jour de repos'} <small class="mut">· ${plan.minutes} min</small></h2>
       ${sch ? '' : '<p class="hint" style="margin-top:0">Ce n\'est pas un jour d\'entraînement prévu — mais tu peux t\'entraîner quand même.</p>'}
@@ -147,6 +171,7 @@ function renderToday() {
     b.onclick = () => startLesson(l, ok);
     li.append(b); ul.append(li);
   });
+  el.querySelector('#bdg').onclick = badgesModal;
   el.querySelector('#editPlan').onclick = () => planEditor(false);
   const cta = el.querySelector('#cta'); if (cta) cta.onclick = () => startLesson(nxt, true);
 }
@@ -182,13 +207,15 @@ function startLesson(l, ok) {
   $('#mGo').onclick = () => { closeModal(); H.begin(l.song, { mode: l.mode || 'wait', hands: 'both', speed: l.speed || 1, label: l.title, onDone: s => lessonDone(l, s) }); };
 }
 function lessonDone(l, s) {
+  const was = done(l);
   const p = (progress[l.id] ||= { stars: 0, plays: 0 });
   p.stars = Math.max(p.stars, s.stars); p.plays++; p.last = Date.now();
   p.box = s.stars >= 2 ? Math.min(4, (p.box || 0) + 1) : s.stars === 1 ? (p.box || 0) : 0;
   p.due = Date.now() + (s.stars ? [1, 3, 7, 14, 30][p.box] : 1) * 864e5;
   const d = (days[dkey()] ||= { sec: 0, done: [] }); if (s.stars >= 1 && !d.done.includes(l.id)) d.done.push(l.id);
   H.store.set('sp.progress', progress); H.store.set('sp.days', days);
-  const i = ALL.indexOf(l), nx = ALL[i + 1], xp = award(l, s);
+  if (s.stars >= 1) { wkGet()[was ? 'reviews' : 'lessons']++; H.store.set('sp.week', wk); }
+  const i = ALL.indexOf(l), nx = ALL[i + 1], xp = award(l, { ...s, review: was && s.stars >= 1 });
   if (s.stars >= 1 && nx) return { label: 'Leçon suivante : ' + nx.title, run: () => startLesson(nx, true), hint: xp + '\n' + SLEEP };
   if (s.stars < 1) return { hint: 'Pas de souci, une erreur est une information ! Il faut au moins ★ pour passer à la suite : réessaie, ou ralentis la vitesse.' };
   return { hint: xp + '\n' + SLEEP };
