@@ -25,7 +25,7 @@ jobs:
           sed -i 's#<application#<uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <application#' android/app/src/main/AndroidManifest.xml
       - name: Compiler l'APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        run: for i in 1 2 3; do ./gradlew assembleDebug --no-daemon && exit 0; echo "tentative $i échouée"; sleep 45; done; exit 1
       - uses: actions/upload-artifact@v4
         with:
           name: PianoFlow-apk
