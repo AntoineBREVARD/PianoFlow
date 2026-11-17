@@ -214,14 +214,14 @@ function startGame(song, warning, opts = {}) {
   notes.sort((a, b) => a.s - b.s || a.m - b.m);
   notes.forEach(n => { n.req = o.mode !== 'demo' && (o.hands === 'both' || o.hands === n.h); });
   if (!notes.some(n => n.req) && o.mode !== 'demo') notes.forEach(n => { n.req = true; });
-  let lo = Math.min(...notes.map(n => n.m)), hi = Math.max(...notes.map(n => n.m));
+  let lo = notes.reduce((a, n) => Math.min(a, n.m), 127), hi = notes.reduce((a, n) => Math.max(a, n.m), 0);
   while (isBlack(lo)) lo--; while (isBlack(hi)) hi++;
   while (hi - lo < 23) { if (hi < 108) hi++; if (hi - lo < 23 && lo > 21) lo--; }
   while (isBlack(lo)) lo--; while (isBlack(hi)) hi++;
   const req = notes.filter(n => n.req);
   G = {
     song, notes, req, lo, hi, mode: o.mode, sp: o.speed, opts: o, secs: 0,
-    t: notes[0].s - 3, gi: 0, mi: 0, ai: 0, end: Math.max(...notes.map(n => n.s + n.d)),
+    t: notes[0].s - 3, gi: 0, mi: 0, ai: 0, end: notes.reduce((a, n) => Math.max(a, n.s + n.d), 0),
     total: req.length, hits: 0, wrong: 0, missed: 0, streak: 0, best: 0, paused: false, last: performance.now(), flash: null, mic: settings.input === 'mic',
   };
   $('#home').hidden = true; $('#result').hidden = true; $('#game').hidden = false;

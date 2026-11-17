@@ -40,6 +40,18 @@ function closeModal() { $('#modal').hidden = true; }
 const stars = l => progress[l.id]?.stars || 0;
 const done = l => stars(l) >= 1;
 const unlocked = i => i <= (plan?.start || 0) || !!progress[ALL[i].id] || (i > 0 && done(ALL[i - 1]));
+const BADGES = { first: ['🎹', 'Première leçon'], star3: ['⭐', 'Trois étoiles'], lvl: ['🎓', 'Niveau terminé'], streak3: ['🔥', '3 jours de suite'], notes100: ['🎵', '100 notes justes'] };
+const profile = () => H.store.get('sp.profile', { xp: 0, hits: 0, badges: {} });
+const levelOf = xp => Math.floor(Math.sqrt(xp / 50)) + 1;
+function award(l, s) {
+  const p = profile(), before = levelOf(p.xp), gain = s.stars >= 1 ? 10 + s.stars * 10 + (s.hits || 0) : 2;
+  p.xp += gain; p.hits += s.hits || 0;
+  const got = [], give = k => { if (!p.badges[k]) { p.badges[k] = Date.now(); got.push(BADGES[k][0] + ' ' + BADGES[k][1]); } };
+  if (s.stars >= 1) give('first'); if (s.stars >= 3) give('star3'); if (p.hits >= 100) give('notes100'); if (streak() >= 3) give('streak3');
+  if (s.stars >= 1 && LEVELS[l.level].lessons.every(x => done(x) || x.id === l.id)) give('lvl');
+  H.store.set('sp.profile', p);
+  return gain + ' XP' + (levelOf(p.xp) > before ? ' · 🎉 Niveau ' + levelOf(p.xp) + ' !' : '') + (got.length ? ' · Nouveau : ' + got.join(', ') : '');
+}
 const SLEEP = '🌙 Ton cerveau range ce que tu as appris pendant la nuit : 10 minutes aujourd\'hui puis 10 demain valent mieux que 20 d\'un coup.';
 const starStr = n => '★'.repeat(n) + '☆'.repeat(3 - n);
 const scheduled = date => plan?.days.includes(date.getDay());
@@ -109,7 +121,10 @@ function renderToday() {
       <small class="mut">Aucune partition à lire · 3 min</small>
       ${fresh ? '<ul class="perks"><li>' + ALL.length + ' leçons progressives, du premier Do aux morceaux à deux mains</li><li>Importe tes partitions (MIDI, MusicXML) et apprends-les main par main</li><li>Gratuit et hors ligne, sur téléphone, tablette ou avec ton piano USB</li></ul><p class="hint">🪑 Assieds-toi dos droit, épaules relâchées, poignets souples, doigts arrondis comme si tu tenais une balle. Si ta main serre, fais une pause.</p>' : '<p class="hint">🌙 Ton cerveau range ce que tu as appris pendant la nuit : 10 minutes aujourd\'hui puis 10 demain valent mieux que 20 d\'un coup.</p>'}
     </section>` : '';
+  const pf = profile(), nb = Object.keys(pf.badges).length;
   el.innerHTML = hero + `
+    <section class="card"><div class="status"><b>Niveau ${levelOf(pf.xp)}</b><span>${pf.xp} XP</span><span>🏅 ${nb}/${Object.keys(BADGES).length} badges</span></div>
+      <div class="progress"><div style="width:${(pf.xp - 50 * (levelOf(pf.xp) - 1) ** 2) / (50 * (2 * levelOf(pf.xp) - 1)) * 100}%"></div></div></section>
     <section class="card">
       <div class="streak"><div class="big-n">🔥 ${sn}</div><div>${sn > 1 ? 'jours de suite' : sn === 1 ? 'jour validé' : 'Commence ta série aujourd\'hui !'}<br><small>Cette semaine : ${wk.ok}/${wk.goal} séances</small></div></div>
       <div class="dots">${wk.html}</div>
@@ -173,10 +188,10 @@ function lessonDone(l, s) {
   p.due = Date.now() + (s.stars ? [1, 3, 7, 14, 30][p.box] : 1) * 864e5;
   const d = (days[dkey()] ||= { sec: 0, done: [] }); if (s.stars >= 1 && !d.done.includes(l.id)) d.done.push(l.id);
   H.store.set('sp.progress', progress); H.store.set('sp.days', days);
-  const i = ALL.indexOf(l), nx = ALL[i + 1];
-  if (s.stars >= 1 && nx) return { label: 'Leçon suivante : ' + nx.title, run: () => startLesson(nx, true), hint: SLEEP };
+  const i = ALL.indexOf(l), nx = ALL[i + 1], xp = award(l, s);
+  if (s.stars >= 1 && nx) return { label: 'Leçon suivante : ' + nx.title, run: () => startLesson(nx, true), hint: xp + '\n' + SLEEP };
   if (s.stars < 1) return { hint: 'Pas de souci, une erreur est une information ! Il faut au moins ★ pour passer à la suite : réessaie, ou ralentis la vitesse.' };
-  return { hint: SLEEP };
+  return { hint: xp + '\n' + SLEEP };
 }
 
 /* ---------- plan ---------- */

@@ -50,4 +50,13 @@ export const DEMOS = [
   make('Korobeiniki (air de Tetris)', 120,
     'E5 B4:.5 C5:.5 D5 C5:.5 B4:.5 | A4 A4:.5 C5:.5 E5 D5:.5 C5:.5 | B4:1.5 C5:.5 D5 E5 | C5 A4 A4:2',
     'E3+B3:4 | A2+E3:4 | G#2+B2+E3:4 | A2+E3:4'),
+  make('Hot Cross Buns', 100,
+    'E4^3 D4^2 C4:2^1 | E4^3 D4^2 C4:2^1 | C4:.5^1 C4:.5^1 C4:.5^1 C4:.5^1 D4:.5^2 D4:.5^2 D4:.5^2 D4:.5^2 | E4^3 D4^2 C4:2^1',
+    'C3+G3:4 | C3+G3:4 | C3+G3:4 | C3+G3:4'),
+  make('Row, Row, Row Your Boat', 100,
+    'C4:1.5^1 C4:1.5^1 | C4^1 D4:.5^2 E4:1.5^3 | E4^3 D4:.5^2 E4^3 F4:.5^4 | G4:3^5',
+    'C3+G3:3 | C3+G3:3 | C3+G3:3 | C3+G3:3'),
+  make('Old MacDonald', 110,
+    'C4^1 C4^1 C4^1 G4^4 | A4^5 A4^5 G4:2^4 | E4^3 E4^3 D4^2 D4^2 | C4:2^1',
+    'C3+G3:4 | F3+C4:4 | C3+G3:4 | G2+D3:2 C3+G3:2'),
 ];
