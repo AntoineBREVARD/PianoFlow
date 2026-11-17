@@ -12,7 +12,7 @@
 </head>
 <body>
 <main id="home">
-  <header><h1>🎹 PianoFlow</h1><p>Apprends le piano, du premier Do jusqu'à tes morceaux préférés. Aucune partition à lire : les notes tombent, tu les suis.</p></header>
+  <header><button id="prefsBtn" class="ghost" aria-label="Réglages" style="float:right">⚙️ Réglages</button><h1>🎹 PianoFlow</h1><p>Apprends le piano, du premier Do jusqu'à tes morceaux préférés. Aucune partition à lire : les notes tombent, tu les suis.</p></header>
   <div id="tab-today" class="tab"></div>
   <div id="tab-course" class="tab" hidden></div>
   <div id="tab-songs" class="tab" hidden>
@@ -82,6 +82,24 @@
     <label class="row"><input id="s_names" type="checkbox"> Afficher le nom des notes (Do Ré Mi)</label>
     <button id="setupGuided" class="primary" style="width:100%">🎓 Apprendre ce morceau pas à pas</button>
     <div class="actions"><button id="setupCancel" class="ghost">Annuler</button><button id="setupGo" class="ghost">Jouer directement</button></div>
+  </div>
+</section>
+
+<section id="prefs" hidden>
+  <div class="sheet">
+    <h2>⚙️ Réglages</h2>
+    <label>Comment tu joues
+      <select id="p_input">
+        <option value="touch">Écran tactile</option>
+        <option value="mic">Micro — je joue sur un vrai piano</option>
+        <option value="midi">Piano USB-MIDI (navigateur Chrome)</option>
+      </select>
+    </label>
+    <label class="row"><input id="p_names" type="checkbox"> Afficher le nom des notes (Do Ré Mi)</label>
+    <label>Décalage du micro <b id="p_latVal"></b><input id="p_lat" type="range" min="0" max="0.5" step="0.01"></label>
+    <p class="hint">Si les notes sont validées trop tôt ou trop tard avec le micro, augmente ou diminue ce décalage.</p>
+    <button id="p_recal" type="button" class="ghost">Recalibrer le micro</button>
+    <div class="actions"><button id="p_close" class="primary">Fermer</button></div>
   </div>
 </section>
 
