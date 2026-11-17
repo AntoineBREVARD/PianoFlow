@@ -1,5 +1,6 @@
 // Cours, plan d'apprentissage, séance du jour, parcours guidé d'un morceau.
 import { LEVELS, ALL } from './curriculum.js';
+import { QUESTIONS, placementLevel } from './placement.js';
 
 const $ = s => document.querySelector(s);
 let planAsked = false, freezeUsed = false, wk = null, H = null, progress = {}, plan = null, days = {}, guidedP = {};
@@ -225,7 +226,8 @@ function lessonDone(l, s) {
 function planEditor(first) {
   const p = plan || { days: [1, 3, 5], minutes: 10, start: 0, time: '18:00' };
   const b = modal(`<h2>${first ? '👋 Bienvenue ! Crée ton plan' : 'Mon plan d\'apprentissage'}</h2>
-    ${first ? `<label>Ton niveau<select id="p_level"><option value="0">Débutant complet — je pars de zéro</option>${LEVELS.slice(1).map((lv, i) => `<option value="${LEVELS.slice(0, i + 1).reduce((n, x) => n + x.lessons.length, 0)}">J'ai des bases — ${lv.title}</option>`).join('')}</select></label>` : ''}
+    ${first ? `<label>Ton niveau<select id="p_level"><option data-lv="1" value="0">Débutant complet — je pars de zéro</option>${LEVELS.slice(1).map((lv, i) => `<option data-lv="${i + 2}" value="${LEVELS.slice(0, i + 1).reduce((n, x) => n + x.lessons.length, 0)}">J'ai des bases — ${lv.title}</option>`).join('')}</select></label>` : ''}
+    ${first ? '<button class="ghost" id="p_test" type="button">🧪 Pas sûr·e ? Fais le mini test (2 min)</button>' : ''}
     <p class="hint" style="margin-top:0">Choisis ta fréquence : l'appli prépare chaque séance pour toi.</p>
     <div class="chips">${PRESETS.map((x, i) => `<button class="chip" data-i="${i}">${x.label}</button>`).join('')}</div>
     <div class="dayrow">${ORDER.map(d => `<label class="day"><input type="checkbox" value="${d}" ${p.days.includes(d) ? 'checked' : ''}><span>${DOW[d]}</span></label>`).join('')}</div>
@@ -242,7 +244,34 @@ function planEditor(first) {
     plan = { ...p, ...r, start: first ? +($('#p_level')?.value || 0) : (p.start || 0) };
     H.store.set('sp.plan', plan); closeModal(); refresh();
   };
+  if (first) $('#p_test').onclick = () => placementTest(lvl => { const o = $('#p_level'); if (o) o.value = o.querySelector(`option[data-lv="${lvl}"]`)?.value ?? 0; });
   $('#p_ics').onclick = () => { const r = read(); if (!r.days.length) { alert('Choisis au moins un jour.'); return; } downloadIcs(r); };
+}
+/* ---------- test de placement (sans partition, sans note éliminatoire) ---------- */
+function miniKeys(hl) {
+  const W = 28, blacks = [1, 2, 4, 5, 6];
+  return `<svg viewBox="0 0 ${7 * W} 80" width="100%" style="max-width:260px;display:block;margin:8px auto" role="img" aria-label="Clavier d'une octave, une touche est colorée">${[0, 1, 2, 3, 4, 5, 6].map(i => `<rect x="${i * W}" y="0" width="${W}" height="80" fill="${i === hl ? '#ffd24a' : '#fff'}" stroke="#333"/>`).join('')}${blacks.map(i => `<rect x="${i * W - 8}" y="0" width="16" height="48" fill="#111"/>`).join('')}</svg>`;
+}
+function placementTest(apply) {
+  const ans = []; let i = 0;
+  const step = () => {
+    if (i >= QUESTIONS.length) return result();
+    const q = QUESTIONS[i];
+    const b = modal(`<small class="mut">Question ${i + 1}/${QUESTIONS.length} · pas de note, c'est juste pour te conseiller</small><h2></h2>${q.hl != null ? miniKeys(q.hl) : ''}
+      <div class="chips" style="flex-direction:column"></div><div class="actions"><button class="ghost" id="t_no">Passer le test</button></div>`);
+    b.querySelector('h2').textContent = q.q;
+    q.choices.forEach((c, k) => { const bt = document.createElement('button'); bt.className = 'chip'; bt.textContent = c; bt.onclick = () => { ans.push(k === q.ok); i++; step(); }; b.querySelector('.chips').append(bt); });
+    $('#t_no').onclick = () => planEditorBack();
+  };
+  const planEditorBack = () => planEditor(true);
+  const result = () => {
+    const lvl = placementLevel(ans);
+    const b = modal(`<h2>${lvl === 1 ? 'Bravo, on part sur de bonnes bases !' : 'Super, tu as déjà des acquis !'}</h2><p>Je te conseille de commencer au <b>niveau ${lvl}</b> (${LEVELS[lvl - 1].title.split('· ')[1]}). Tu pourras toujours rejouer les leçons précédentes.</p>
+      <div class="actions"><button class="ghost" id="t_man">Je choisis moi-même</button><button class="primary" id="t_go">Commencer au niveau ${lvl}</button></div>`);
+    $('#t_man').onclick = planEditorBack;
+    $('#t_go').onclick = () => { planEditor(true); apply(lvl); };
+  };
+  step();
 }
 function downloadIcs({ days: ds, minutes, time }) {
   const code = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'], [hh, mm] = time.split(':');
