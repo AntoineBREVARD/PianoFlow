@@ -201,23 +201,26 @@ async function shareCard(sm) {
 
 /* ---------- UI ---------- */
 const CSS = `.st{display:grid;gap:12px;max-width:640px;margin:0 auto;color:var(--fg)}
-.st-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
-.st-card h3{margin:0 0 8px;font-size:1rem}
-.st-bar{height:10px;background:var(--line);border-radius:6px;overflow:hidden}
-.st-bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--acc),var(--acc2))}
-.st-mut{color:var(--mut);font-size:.85rem}
-.st-msg{background:var(--card);border:1px solid var(--acc);border-radius:14px;padding:14px;font-weight:600}
-.st-cal{display:grid;grid-template-columns:repeat(10,1fr);gap:4px}
-.st-d{aspect-ratio:1;border-radius:6px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:.7rem;color:var(--fg)}
+.st-card{background:var(--grad-card,var(--card));border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:var(--sh1,none);animation:rise .5s var(--ease,ease) both;animation-delay:calc(var(--i,0)*45ms)}
+.st>*:nth-child(1){--i:0}.st>*:nth-child(2){--i:1}.st>*:nth-child(3){--i:2}.st>*:nth-child(4){--i:3}.st>*:nth-child(5){--i:4}.st>*:nth-child(n+6){--i:5}
+.st-card h3{margin:0 0 10px;font-size:1.05rem;font-weight:800}
+.st-card b{font-size:1.4rem;font-weight:800;font-family:var(--font-display,inherit)}
+.st-bar{height:10px;background:var(--track,var(--line));border-radius:6px;overflow:hidden}
+.st-bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--acc),var(--acc2));border-radius:6px;transform-origin:left;animation:fill .9s var(--ease,ease) both}
+.st-mut{color:var(--mut);font-size:.88rem;margin-top:6px}
+.st-msg{background:linear-gradient(135deg,color-mix(in srgb,var(--acc) 16%,var(--card)),color-mix(in srgb,var(--acc2) 20%,var(--card)));border:1px solid color-mix(in srgb,var(--acc) 40%,var(--line));border-radius:16px;padding:16px;font-weight:700;display:grid;gap:4px;animation:rise .5s var(--ease,ease) both}
+.st-cal{display:grid;grid-template-columns:repeat(10,1fr);gap:5px}
+.st-d{aspect-ratio:1;border-radius:7px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:.7rem;color:var(--fg);animation:pop .4s var(--ease-spring,ease) both;animation-delay:calc(var(--k,0)*12ms)}
 .st-d[data-l="1"]{background:color-mix(in srgb,var(--acc) 25%,transparent)}
 .st-d[data-l="2"]{background:color-mix(in srgb,var(--acc) 50%,transparent)}
 .st-d[data-l="3"]{background:color-mix(in srgb,var(--acc) 75%,transparent)}
-.st-d[data-l="4"]{background:var(--acc);color:var(--bg);font-weight:700}
-.st-row{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:6px 0}
+.st-d[data-l="4"]{background:var(--acc);color:var(--onacc,var(--bg));font-weight:700;border-color:transparent}
+.st-row{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:8px 0}
 .st-row .st-bar{grid-column:1/-1}
-.st-chips{display:flex;flex-wrap:wrap;gap:6px}.st-chips span{border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+.st-chips{display:flex;flex-wrap:wrap;gap:6px}.st-chips span{border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:4px 12px;font-weight:700}
 .st-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .st-act{display:flex;gap:8px;flex-wrap:wrap}
+.st-card ul{list-style:disc;padding-left:20px;margin:0}.st-card li{display:list-item;border:0;padding:3px 0}
 .st-note{min-height:1.2em}`;
 
 export function mount(container, store) {
@@ -229,7 +232,7 @@ export function mount(container, store) {
 <div class="st-msg" role="status">${s.messages.map(m => `<div>${esc(m)}</div>`).join('')}</div>
 <section class="st-card"><h3>Niveau ${s.level.level}</h3>${bar(s.level.into, s.level.span)}<div class="st-mut">${s.level.xp} XP · encore ${s.level.span - s.level.into} XP pour le niveau ${s.level.level + 1}</div></section>
 <section class="st-card"><h3>30 derniers jours</h3>
-<div class="st-cal" role="list">${s.calendar.map(c => `<div class="st-d" role="listitem" data-l="${c.lvl}" title="${c.date} : ${c.min} min" aria-label="${c.date} : ${c.min ? c.min + ' minutes jouées' : 'pas de piano'}">${c.min || ''}</div>`).join('')}</div>
+<div class="st-cal" role="list">${s.calendar.map((c, k) => `<div class="st-d" style="--k:${k}" role="listitem" data-l="${c.lvl}" title="${c.date} : ${c.min} min" aria-label="${c.date} : ${c.min ? c.min + ' minutes jouées' : 'pas de piano'}">${c.min || ''}</div>`).join('')}</div>
 <div class="st-mut">Chiffre = minutes jouées ; plus la case est foncée, plus tu as joué.</div></section>
 <div class="st-grid"><section class="st-card"><h3>Cette semaine</h3><b>${s.minutes.week} min</b></section><section class="st-card"><h3>Ce mois-ci</h3><b>${s.minutes.month} min</b></section></div>
 <section class="st-card"><h3>Leçons réussies : ${s.lessons.done} / ${s.lessons.total}</h3>${bar(s.lessons.done, s.lessons.total)}${s.lessons.perLevel.map(l => `<div class="st-row"><span>${esc(l.title)}</span><span class="st-mut">${l.done}/${l.total}</span>${bar(l.done, l.total)}</div>`).join('')}</section>

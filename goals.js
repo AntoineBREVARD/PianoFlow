@@ -5,6 +5,7 @@
 import * as SK from './skill.js';
 import { makePlan, adapt, nextTasks, eta, masteryFrom } from './songplan.js';
 import { esc } from './stats.js';
+import { ic } from './ui.js';
 
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const r2 = x => Math.round(x * 100) / 100;
@@ -258,15 +259,15 @@ export const nextSession = (goal, now) => goal.plan.sessions.find(s => s.date > 
 
 // ---------- interface ----------
 const $ = (r, s) => r.querySelector(s);
-const sectionBars = an => an.sections.map(s => `<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><small style="width:44%;flex:none">${esc(s.label)}${s.dupOf ? ' <span class="mut">(reprise)</span>' : ''}</small><div class="progress" style="flex:1;margin:0"><div style="width:${Math.round(s.difficulty * 100)}%"></div></div><small style="width:34px;text-align:right">${Math.round(s.difficulty * 100)}%</small></div>`).join('');
-const VERDICT = { ok: ['✅', 'Réaliste'], tight: ['⚠️', 'Serré'], unrealistic: ['🛑', 'Irréaliste'] };
+const sectionBars = an => an.sections.map(s => `<div class="secbar"><small>${esc(s.label)}${s.dupOf ? ' <span class="mut">(reprise)</span>' : ''}</small><div class="progress"><div style="width:${Math.round(s.difficulty * 100)}%"></div></div><small class="pc">${Math.round(s.difficulty * 100)}%</small></div>`).join('');
+const VERDICT = { ok: [ic('ok', 20), 'Réaliste'], tight: [ic('warn', 20), 'Serré'], unrealistic: [ic('warn', 20), 'Irréaliste'] };
 
 export function openGoalModal({ song, store, modal, closeModal, onSaved, begin }) {
   const today = todayStr(), profile = loadSkill(store), bpm = song.bpm > 0 ? song.bpm : 100;
   const gp = (() => { try { const p = store.get('sp.plan', null); return isObj(p) && Array.isArray(p.days) && p.days.length ? p : null; } catch { return null; } })();
   const days0 = (gp?.days || [1, 3, 5]).filter(d => Number.isInteger(d) && d >= 0 && d <= 6), mpd0 = fin(+gp?.minutes) && gp.minutes > 0 ? Math.round(gp.minutes) : 10;
   let limit = 0, plan = null;
-  const b = modal(`<h2>🎯 Mon objectif</h2><p class="hint" style="margin-top:0"><b>${esc(song.title)}</b> : dis-moi pour quand tu veux savoir le jouer, je prépare un programme adapté à ton niveau.</p>
+  const b = modal(`<h2>${ic('target', 24)} Mon objectif</h2><p class="hint" style="margin-top:0"><b>${esc(song.title)}</b> : dis-moi pour quand tu veux savoir le jouer, je prépare un programme adapté à ton niveau.</p>
     <div id="g_an"></div>
     <label>Date limite<input type="date" id="g_date" min="${addDays(today, 1)}" value="${addDays(today, 30)}"></label>
     <div class="chips"><button class="chip" type="button" data-d="14">2 semaines</button><button class="chip" type="button" data-d="30">1 mois</button><button class="chip" type="button" data-d="90">3 mois</button></div>
@@ -281,16 +282,16 @@ export function openGoalModal({ song, store, modal, closeModal, onSaved, begin }
     if (!ok) { $(b, '#g_verdict').innerHTML = '<p class="hint">Choisis une date, une durée par jour et au moins un jour.</p>'; $(b, '#g_cal').innerHTML = ''; return; }
     plan = makePlan({ song: subSong(song, limit), now: today, deadline: r.deadline, minutesPerDay: r.mpd, days: r.days, targetSpeed: 1, skill: skillFor(profile, bpm), progress: {} });
     const an = plan.analysis, f = plan.feasibility, v = VERDICT[f.verdict] || VERDICT.unrealistic, valid = plan.sessions.length > 0;
-    $(b, '#g_an').innerHTML = `<div class="card" style="margin:0 0 12px"><b>Niveau du morceau : ${esc(an.overall.level)}</b> <small class="mut">· difficulté ${Math.round(an.overall.difficulty * 100)} % · ${an.bars} mesures · ≈ ${an.overall.minutesEstimate} min de travail</small>${limit ? `<br><small class="mut">Programme limité aux ${limit} premières mesures.</small>` : ''}<div style="margin-top:8px">${sectionBars(an)}</div></div>`;
+    $(b, '#g_an').innerHTML = `<div class="vcard"><b>Niveau du morceau : ${esc(an.overall.level)}</b> <small class="mut">· difficulté ${Math.round(an.overall.difficulty * 100)} % · ${an.bars} mesures · ≈ ${an.overall.minutesEstimate} min de travail</small>${limit ? `<br><small class="mut">Programme limité aux ${limit} premières mesures.</small>` : ''}<div style="margin-top:8px">${sectionBars(an)}</div></div>`;
     const sug = [];
     if (f.verdict !== 'ok') {
       if (f.suggestedMinutesPerDay) sug.push(`<button class="chip" type="button" data-m="${+f.suggestedMinutesPerDay}">${+f.suggestedMinutesPerDay} min par jour</button>`);
       if (ISO.test(f.suggestedDeadline || '')) sug.push(`<button class="chip" type="button" data-dl="${esc(f.suggestedDeadline)}">Échéance au ${fr(f.suggestedDeadline)}</button>`);
       if (f.verdict === 'unrealistic' && an.sections.length > 1 && !limit) sug.push('<button class="chip" type="button" id="g_cut">Réduire le morceau</button>');
     }
-    $(b, '#g_verdict').innerHTML = `<div class="card" style="margin:0 0 12px"><b>${v[0]} ${v[1]}</b><p style="margin:6px 0">${esc(tu(f.message))}</p>${sug.length ? `<div class="chips">${sug.join('')}</div>` : ''}</div>`;
+    $(b, '#g_verdict').innerHTML = `<div class="vcard ${VERDICT[f.verdict] ? f.verdict : 'unrealistic'}"><b style="display:flex;align-items:center;gap:8px">${v[0]} ${v[1]}</b><p style="margin:6px 0">${esc(tu(f.message))}</p>${sug.length ? `<div class="chips">${sug.join('')}</div>` : ''}</div>`;
     const ses = plan.sessions.slice(0, 6).map(s => `<li><small><b>${DOW[new Date(s.date + 'T12:00:00Z').getUTCDay()]} ${fr(s.date).slice(0, 5)}</b> · ${s.minutes} min${s.note ? ' (courte)' : ''} · ${esc([...new Set(s.tasks.map(t => taskInfo({ plan }, t)?.label.replace(/ · \d+ %( · \d+ fois)?$/, '') || '').filter(Boolean))].slice(0, 2).join(' + '))}</small></li>`).join('');
-    $(b, '#g_cal').innerHTML = valid ? `<div class="card" style="margin:0 0 12px"><b>Aperçu du calendrier</b> <small class="mut">· ${plan.sessions.length} séances</small><ul style="margin:6px 0;padding-left:18px">${ses}</ul><small class="mut">Jalons : ${esc(plan.milestones.map(m => fr(m.date).slice(0, 5)).slice(0, 4).join(' · '))} · jour J ${fr(plan.deadline)}</small></div>` : '';
+    $(b, '#g_cal').innerHTML = valid ? `<div class="vcard"><b>Aperçu du calendrier</b> <small class="mut">· ${plan.sessions.length} séances</small><ul style="margin:6px 0;padding-left:18px">${ses}</ul><small class="mut">Jalons : ${esc(plan.milestones.map(m => fr(m.date).slice(0, 5)).slice(0, 4).join(' · '))} · jour J ${fr(plan.deadline)}</small></div>` : '';
     $(b, '#g_ok').disabled = !valid;
     b.querySelectorAll('[data-m]').forEach(x => x.onclick = () => { $(b, '#g_min').value = x.dataset.m; compute(); });
     b.querySelectorAll('[data-dl]').forEach(x => x.onclick = () => { $(b, '#g_date').value = x.dataset.dl; compute(); });
@@ -317,7 +318,7 @@ export function openGoalModal({ song, store, modal, closeModal, onSaved, begin }
   compute();
 }
 
-const PACE = { on_track: '✅ En bonne voie', behind: '🐢 Un peu en retard', ahead: '🚀 En avance' };
+const PACE = { on_track: ic('ok', 18) + ' En bonne voie', behind: ic('snail', 18) + ' Un peu en retard', ahead: ic('rocket', 18) + ' En avance' };
 // carte(s) « Programme » de l'accueil. ctx : { store, begin, record, refresh, confirm }
 export function mountToday(box, ctx, now = todayStr()) {
   box.innerHTML = '';
@@ -330,16 +331,16 @@ export function mountToday(box, ctx, now = todayStr()) {
     let e = null; try { e = eta(g.plan, Object.fromEntries(Object.entries(prog).map(([k, v]) => [k, { mastery: v.mastery, lastTs: v.lastTs }])), now, skillFor(profile, g.plan.bpm)); } catch { /* estimation facultative */ }
     const sec = document.createElement('section'); sec.className = 'card goal';
     const us = g.plan.analysis.sections.filter(s => !s.dupOf);
-    const strip = us.map(s => { const m = prog[s.id]; return `<span title="Phrase ${esc(s.id.slice(1))}" style="display:inline-block;width:22px;text-align:center">${m.mastered ? '✓' : m.stage > 0 ? '◐' : '○'}</span>`; }).join('');
+    const strip = us.map(s => { const m = prog[s.id]; return `<span class="ph ${m.mastered ? 'ok' : m.stage > 0 ? 'half' : ''}" title="Phrase ${esc(s.id.slice(1))} : ${m.mastered ? 'maîtrisée' : m.stage > 0 ? 'en cours' : 'à faire'}" role="img" aria-label="Phrase ${esc(s.id.slice(1))} : ${m.mastered ? 'maîtrisée' : m.stage > 0 ? 'en cours' : 'à faire'}">${m.mastered ? ic('check', 14) : esc(s.id.slice(1))}</span>`; }).join('');
     const tasks = g.status === 'active' ? frozenTasks(st, g, now) : [];
     const nx = nextSession(g, now);
-    sec.innerHTML = `<h2>🎯 Programme : <span class="gt"></span></h2>
+    sec.innerHTML = `<div class="gh"><span class="gbadge">${ic('target', 22)}</span><h2>Programme : <span class="gt"></span></h2></div>
       <small class="mut">Date limite : ${fr(g.deadline)} ${left > 0 ? `(dans ${left} j)` : left === 0 ? '(aujourd\'hui)' : '(dépassée)'} · ${esc(g.minutesPerDay)} min/jour</small>
       <div class="progress"><div style="width:${pct}%"></div></div>
       <small class="mut">${pct} % · ${e ? `${e.mastered}/${e.total} phrases maîtrisées${e.date ? ` · fin estimée le ${fr(e.date)}` : ''}` : ''}</small>
-      <div style="margin:6px 0"><small>${strip}</small></div>
-      ${g.status === 'done' ? '<p>🎉 Programme terminé : tu maîtrises ce morceau !</p>' : `<p style="margin:6px 0"><b>${PACE[g.pace] || PACE.on_track}</b></p>${g.reasons.map(r => `<small class="mut" style="display:block">${esc(r)}</small>`).join('')}`}
-      ${g.status === 'active' ? (tasks.length ? '<h3 style="margin:10px 0 4px;font-size:15px">Aujourd\'hui</h3><div class="tp"></div><ul class="gl"></ul>' : `<p class="hint">Pas de séance prévue aujourd'hui${nx ? ` · prochaine le ${fr(nx)}` : ''}.</p>`) : ''}
+      <div class="strip">${strip}</div>
+      ${g.status === 'done' ? '<p><b>🎉 Programme terminé : tu maîtrises ce morceau !</b></p>' : `<div class="pace">${PACE[g.pace] || PACE.on_track}</div>${g.reasons.map(r => `<small class="mut" style="display:block">${esc(r)}</small>`).join('')}`}
+      ${g.status === 'active' ? (tasks.length ? '<h3>Aujourd\'hui</h3><div class="tp"></div><ul class="gl"></ul>' : `<p class="hint">Pas de séance prévue aujourd'hui${nx ? ` · prochaine le ${fr(nx)}` : ''}.</p>`) : ''}
       <div class="actions">${g.status === 'active' ? '<button class="ghost gr">Recalculer mon programme</button>' : ''}<button class="ghost gx"></button></div>`;
     sec.querySelector('.gt').textContent = g.title;
     const gx = sec.querySelector('.gx'); gx.textContent = g.status === 'done' ? 'OK, archiver' : 'Abandonner';
@@ -355,6 +356,7 @@ export function mountToday(box, ctx, now = todayStr()) {
       const li = document.createElement('li');
       li.innerHTML = '<div class="info"><b></b><small></small></div>';
       li.querySelector('b').textContent = ({ done: '✓ ', doing: '◐ ', todo: '○ ' })[states[i]] + info.label + ` (${progs[i].n}/${progs[i].reps})`;
+      if (states[i] === 'done') li.style.borderColor = 'var(--okline)';
       li.querySelector('small').textContent = `~${info.minutes} min${info.why ? ' · ' + info.why : ''}`;
       const bt = document.createElement('button'); bt.className = states[i] === 'done' ? 'ghost' : 'primary'; bt.textContent = states[i] === 'done' ? 'Refaire' : 'Jouer';
       bt.onclick = () => runTask(g, info, ctx);

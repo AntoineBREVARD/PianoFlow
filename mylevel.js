@@ -11,22 +11,22 @@ let seq = 0;
 const CSS = `
 .ml-wrap{max-width:760px;margin:0 auto;padding:14px;color:var(--fg)}
 .ml-wrap h2{margin:0 0 4px;font-size:1.3rem}.ml-wrap h3{margin:0 0 8px;font-size:1.05rem}
-.ml-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}
+.ml-card{background:var(--grad-card,var(--card));border:1px solid var(--line);border-radius:16px;padding:16px;margin:12px 0;box-shadow:var(--sh1,none);animation:rise .5s var(--ease,ease) both}.ml-wrap>.ml-card:nth-child(2){animation-delay:.06s}.ml-wrap>.ml-card:nth-child(3){animation-delay:.12s}.ml-wrap>.ml-card:nth-child(n+4){animation-delay:.18s}
 .ml-mut{color:var(--mut);font-size:.9rem}
 .ml-radar{display:block;width:100%;max-width:440px;margin:0 auto;height:auto}
 .ml-radar text{fill:var(--fg);font-size:11px}
 .ml-grid{fill:none;stroke:var(--line);stroke-width:1}
-.ml-shape{fill:var(--acc);fill-opacity:.25;stroke:var(--acc);stroke-width:2.5}
-.ml-dot{fill:var(--acc);stroke:var(--bg);stroke-width:1.5}.ml-dot.ml-lo{fill:var(--bg);stroke:var(--acc);stroke-width:2;stroke-dasharray:2 2}
-.ml-big{font-size:2rem;font-weight:700}
-.ml-pill{display:inline-block;padding:2px 10px;border-radius:99px;border:1px solid var(--acc);margin-left:6px;font-size:.85rem}
+.ml-shape{fill:var(--acc);fill-opacity:.28;stroke:var(--acc);stroke-width:2.5;stroke-linejoin:round;transform-box:view-box;transform-origin:220px 190px;animation:ml-draw .9s var(--ease,ease) both}@keyframes ml-draw{from{transform:scale(.05);opacity:0}}
+.ml-dot{fill:var(--acc);stroke:var(--bg);stroke-width:1.5;animation:pop .5s .5s var(--ease-spring,ease) both;transform-box:fill-box;transform-origin:center}.ml-dot.ml-lo{fill:var(--bg);stroke:var(--acc);stroke-width:2;stroke-dasharray:2 2}
+.ml-big{font-size:2.4rem;font-weight:800;font-family:var(--font-display,inherit);background:linear-gradient(135deg,var(--acc),var(--acc2));-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
+.ml-pill{display:inline-block;padding:3px 12px;border-radius:99px;border:1px solid var(--acc);margin-left:8px;font-size:.85rem;font-weight:700;color:var(--acc);vertical-align:middle}
 .ml-dims{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px}
 .ml-dims li{display:grid;grid-template-columns:9.5em 1fr auto;gap:8px;align-items:center;font-size:.92rem}
-.ml-bar{height:10px;border-radius:5px;background:var(--line);overflow:hidden}.ml-bar i{display:block;height:100%;background:var(--acc)}
+.ml-bar{height:10px;border-radius:5px;background:var(--track,var(--line));overflow:hidden}.ml-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--acc),var(--acc2));border-radius:5px;transform-origin:left;animation:fill .9s var(--ease,ease) both}
 .ml-bar.ml-lo i{background:repeating-linear-gradient(45deg,var(--acc),var(--acc) 4px,transparent 4px,transparent 7px)}
 .ml-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)}
-.ml-row:first-of-type{border-top:0}
-.ml-btn{background:var(--acc);color:var(--bg);border:0;border-radius:10px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer;min-height:40px}
+.ml-row:first-of-type{border-top:0}.ml-wrap ul{list-style:none}.ml-wrap li{display:list-item;border:0;padding:3px 0}.ml-dims li,.ml-evo li{display:grid}.ml-evo li{display:block}
+.ml-btn{background:linear-gradient(135deg,var(--acc),var(--acc2));color:var(--onacc,var(--bg));border:0;border-radius:12px;padding:8px 16px;font:inherit;font-weight:700;cursor:pointer;min-height:44px;box-shadow:0 4px 14px rgba(56,189,248,.22);transition:transform .18s var(--ease,ease)}.ml-btn:active{transform:scale(.97)}
 .ml-btn:focus-visible{outline:3px solid var(--acc2);outline-offset:2px}
 .ml-tag{font-weight:600}.ml-spark{vertical-align:middle;width:90px;height:26px}.ml-spark polyline{fill:none;stroke:var(--acc2);stroke-width:2}
 .ml-evo{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px 14px;list-style:none;margin:0;padding:0;font-size:.9rem}
