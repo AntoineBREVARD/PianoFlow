@@ -1,4 +1,5 @@
 // Oreille : 5 paliers (haut/bas, intervalles, accords, mélodie, pulsation), Leitner sous 'sp.ear'.
+import { ic } from './ui.js';
 import { keyLabel, wireKeys } from './reading.js';
 export const SESSION = 10, PASS = 0.8, DAYS = [1, 3, 7, 14, 30];
 const DAY = 864e5;
@@ -140,7 +141,7 @@ export function mount(container, store) {
 
   function menu() {
     stop();
-    root.innerHTML = `<h2>👂 Entraîner l'oreille</h2><div class="ea-card">Pas à pas, ton oreille apprend à reconnaître les sons. Il faut ${PASS * 100} % de réussite pour ouvrir le palier suivant. Une erreur est une information, pas un échec.<div id="eap"></div></div>`;
+    root.innerHTML = `<h2>${ic('ear', 24)} Entraîner l'oreille</h2><div class="ea-card">Pas à pas, ton oreille apprend à reconnaître les sons. Il faut ${PASS * 100} % de réussite pour ouvrir le palier suivant. Une erreur est une information, pas un échec.<div id="eap"></div></div>`;
     PALIERS.forEach((P, i) => {
       const ok = unlocked(S, i), b = S.best[i], btn = document.createElement('button'); btn.className = 'ea-pal'; btn.disabled = !ok;
       btn.innerHTML = `<span style="font-size:22px">${ok ? (b >= PASS ? '✅' : '🎧') : '🔒'}</span><span><b>${i + 1}. ${esc(P.title)}</b><small>${ok ? (b != null ? 'Meilleur score : ' + Math.round(b * 100) + ' %' : esc(P.intro)) : 'Réussis le palier ' + i + ' à ' + PASS * 100 + ' % pour l\'ouvrir'}</small></span>`;
