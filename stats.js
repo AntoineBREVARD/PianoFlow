@@ -143,6 +143,7 @@ export function cardModel(sm) {
     streak, streakText: streak ? plural(streak, 'jour') + ' de suite' : 'Prêt à reprendre',
     lessons: `${sm.lessons.done} / ${sm.lessons.total}`, lessonsLabel: 'leçons réussies',
     chordsLabel: sm.chords?.length ? `Accords maîtrisés (${sm.chords.length})` : 'Accords : bientôt !',
+    chordsHint: sm.chords?.length ? '' : 'Apprends tes premiers accords dans « Entraîner ».',
     chords, more, reading: `Lecture : palier ${sm.reading.done}/${sm.reading.total}`, ear: `Oreille : palier ${sm.ear.done}/${sm.ear.total}`,
     days: cal.map(c => c.lvl), calLabel: '30 derniers jours', footer: 'Un peu chaque jour, à mon rythme.',
   };
@@ -163,6 +164,7 @@ export function cardLayout(m) {
   rect(M + half + 24, 470, half, 200, PAL.card, 28); text(m.lessons, M + half + 64, 580, 80, PAL.acc2, { weight: 800, maxW: half - 80 }); text(m.lessonsLabel, M + half + 64, 636, 32, PAL.mut, { maxW: half - 80 });
   // accords : pastilles sur 2 lignes maximum
   rect(M, 700, w - 2 * M, 250, PAL.card, 28); text(m.chordsLabel, M + 40, 756, 34, PAL.fg, { weight: 700 });
+  if (m.chordsHint) text(m.chordsHint, M + 40, 830, 32, PAL.mut, { maxW: w - 2 * M - 80 });
   let x = M + 40, y = 790, row = 0;
   for (const c of m.chords.concat(m.more ? ['+' + m.more] : [])) {
     const cw = 36 + 24 * c.length;
