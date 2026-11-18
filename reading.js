@@ -1,4 +1,5 @@
 // Lecture de notes sur portée : paliers, Leitner (sp.reading), exercice SVG. Partie pure exportée en tête (testée par test-reading.mjs).
+import { ic } from './ui.js';
 export const FR = ['Do', 'Ré', 'Mi', 'Fa', 'Sol', 'La', 'Si'], EN = 'CDEFGAB';
 const SEMI = [0, 2, 4, 5, 7, 9, 11], DAYS = [1, 3, 7, 14, 30], DAY = 864e5;
 export const PASS = 0.85, SESSION = 10;
@@ -188,7 +189,7 @@ export function mount(container, store) {
 
   function menu() {
     sess++;
-    root.innerHTML = `<h2>👀 Lire les notes</h2><div class="rd-card">Pas à pas, tu apprends à lire la portée. Il faut ${Math.round(PASS * 100)} % de réussite pour ouvrir le palier suivant. Pas de stress : chaque erreur est une chance d'apprendre.</div>
+    root.innerHTML = `<h2>${ic('eye', 24)} Lire les notes</h2><div class="rd-card">Pas à pas, tu apprends à lire la portée. Il faut ${Math.round(PASS * 100)} % de réussite pour ouvrir le palier suivant. Pas de stress : chaque erreur est une chance d'apprendre.</div>
     <label><input type="checkbox" id="rdl" ${S.labels ? 'checked' : ''}> Afficher les noms (Do Ré Mi / C D E) sur les touches</label>
     <label><input type="checkbox" id="rds" ${S.scroll ? 'checked' : ''}> Mode rythme : la note défile vers la portée (lecture lente)</label>
     <div id="rdp"></div>`;
