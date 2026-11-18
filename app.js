@@ -249,7 +249,7 @@ function micTick() {
     if (mic.onset(s.prev, cur, s.hist)) s.pend = 3; // attaque : on laisse 3 analyses pour que detect() confirme
     s.prev = isFinite(cur) ? cur : floor;
     if (s.pend > 0) {
-      if (found.has(m) && now > s.until) { s.pend = 0; s.until = now + 300; press(m, 'mic' + m, 0.8, true, micLat * bps()); setTimeout(() => release('mic' + m), 150); }
+      if (found.has(m) && now > s.until) { s.pend = 0; s.until = now + 300; press(m, 'mic' + m, 0.8, true, micLat * bps(), true); setTimeout(() => release('mic' + m), 150); }
       else s.pend--;
     }
   }
@@ -484,11 +484,11 @@ function workDone(g) {
 }
 
 /* ----- saisie ----- */
-function press(m, key, vel = 0.85, silent = false, lat = 0) {
+function press(m, key, vel = 0.85, silent = false, lat = 0, soft = false) {
   if (!silent) { held.get(key)?.off(); held.set(key, voiceOn(m, vel)); }
   pressed.set(m, Infinity);
   if (!G || G.paused) return;
-  judge(m, lat);
+  judge(m, lat, soft);
 }
 function release(key) {
   const v = held.get(key); if (v) { v.off(); held.delete(key); }
@@ -497,7 +497,7 @@ function release(key) {
   // touche écran : retrouve la note
   for (const [k, mm] of keyOwner) if (k === key) { pressed.delete(mm); keyOwner.delete(k); }
 }
-function judge(m, lat = 0) {
+function judge(m, lat = 0, soft = false) { // soft : détection micro d'une note attendue, hors fenêtre de jugement = on ignore (ce n'est pas une faute)
   if (G.mode === 'demo') return;
   let cand = null;
   const t = G.t - lat; // temps de jugement corrigé de la latence micro (en temps de partition)
@@ -530,7 +530,7 @@ function judge(m, lat = 0) {
       }
     }
     if (G.streak % 5 === 0) G.pop = now;
-  } else {
+  } else if (!soft) {
     G.wrong++; G.pw++; G.wl.push({ m, s: +t.toFixed(3) }); G.streak = 0; G.lastAct = now;
     G.bad = { m, t: now }; flash('Oups', '#f87171', 500);
   }
