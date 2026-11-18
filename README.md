@@ -63,3 +63,6 @@ node test-stats.mjs
 MuseScore Studio (musescore.org, gratuit) exporte en `.mxl`/`.mid`. Fichiers libres : piano-midi.de, Mutopia, IMSLP, BitMidi.
 
 Voir aussi : [docs/STORE.md](docs/STORE.md) · [docs/PRIVACY.md](docs/PRIVACY.md) · [docs/ROADMAP.md](docs/ROADMAP.md)
+
+## Clé de debug de l'APK
+`signing/debug.keystore` est une clé de **debug** volontairement publique (mot de passe `android`) : elle sert à signer toujours pareil l'APK de test, pour que chaque nouvelle version s'installe par-dessus la précédente sans désinstaller. Pour le Play Store, il faudra une clé de publication privée, à garder hors du dépôt.
