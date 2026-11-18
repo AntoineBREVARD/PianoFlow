@@ -2,6 +2,7 @@ import { parseFile } from './parsers.js';
 import { DEMOS, compose } from './songs.js';
 import * as learn from './learn.js';
 import * as mic from './mic.js';
+import { shareBlob } from './share.js';
 import { createSynth } from './synth.js';
 import * as accomp from './accomp.js';
 
@@ -342,8 +343,7 @@ function showRec() {
     $('#recShare').onclick = async () => {
       if (!recBlob) return;
       const ext = /mp4/.test(recBlob.type) ? 'm4a' : 'webm', file = new File([recBlob], 'pianoflow-ma-partie.' + ext, { type: recBlob.type });
-      try { if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: 'Ma partie PianoFlow' }); return; } } catch (e) { if (e.name === 'AbortError') return; }
-      const u = URL.createObjectURL(recBlob), a = document.createElement('a'); a.href = u; a.download = file.name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000);
+      try { await shareBlob(recBlob, file.name, { title: 'Ma partie PianoFlow' }); } catch { alert('Partage impossible sur cet appareil.'); }
     };
   }
   box.hidden = !recBlob;
