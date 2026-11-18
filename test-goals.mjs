@@ -22,7 +22,7 @@ st.goals = [g]; g.status = 'active';
 // ---- tâches du jour ----
 const t0 = G.todayTasks(g, NOW); assert.ok(t0.length > 0);
 for (const { info } of t0) { assert.ok(['wait', 'rhythm'].includes(info.mode) && ['R', 'L', 'both'].includes(info.hands)); if (info.zones) assert.ok(info.zones[0][1] > info.zones[0][0]); }
-assert.match(t0.find(x => x.info.zones).info.label, /Phrase \d+ · (main droite|main gauche|deux mains) · \d+ %/);
+assert.match(t0.find(x => x.info.zones).info.label, /Phrase \d+( \((début|fin)\))? · (main droite|main gauche|deux mains) · \d+ %/);
 
 // ---- tentative synthétique : toutes les notes d'une phrase ----
 const uniq = g.plan.analysis.sections.filter(s => !s.dupOf), sec = uniq[0], h0 = sec.features.hands === 'both' ? 'R' : sec.features.hands;
@@ -112,7 +112,7 @@ console.log('test-goals : état des tâches OK');
   const tw = DEMOS.find(d => /Twinkle/.test(d.title)), n15 = G.todayTasks(mkSong(tw, 15), NOW).length, n10 = G.todayTasks(mkSong(tw, 10), NOW).length;
   assert.ok(n15 >= 3 && n15 <= 5, 'séance de 15 min : 3 à 5 blocs, pas ' + n15); assert.ok(n10 >= 3 && n10 <= 5 && n10 <= n15);
   const gb = mkSong(tw, 15), sb = { goals: [gb], gp: {}, gt: {} }, tasks0 = G.todayTasks(gb, NOW);
-  assert.match(tasks0[0].info.label, /^Phrase \d+ · (main droite|main gauche|deux mains) · \d+ % · \d+ fois$/);
+  assert.match(tasks0[0].info.label, /^Phrase \d+( \((début|fin)\))? · (main droite|main gauche|deux mains) · \d+ % · \d+ fois$/);
   // liste figée : générée une fois, stable après plusieurs tentatives (le calendrier, lui, est replanifié)
   assert.equal(G.ensureToday(sb, gb, NOW), true); assert.equal(G.ensureToday(sb, gb, NOW), false, 'pas de regénération le même jour');
   const frozen = JSON.stringify(sb.gt.gb);
@@ -121,7 +121,11 @@ console.log('test-goals : état des tâches OK');
   const t0 = tasks0[0].t, noon = Date.parse(NOW + 'T10:00:00');
   const before = G.taskProgress(gb, sb.gp, t0, NOW); assert.equal(before.n, 0);
   G.applyAttempt(sb, att(s0, noon), O); assert.deepEqual(G.taskProgress(gb, sb.gp, t0, NOW), { state: 'doing', n: 1, reps: t0.reps }, 'compteur +1 par tentative valide');
-  G.applyAttempt(sb, att(s0, noon + 1), O); assert.equal(G.taskProgress(gb, sb.gp, t0, NOW).state, 'done', '2 tentatives réussies valident l étape : bloc ✓');
+  G.applyAttempt(sb, att(s0, noon + 1), O);
+  const half = Math.ceil(t0.reps / 2); assert.ok(t0.reps > 2 && t0.reps <= 8);
+  assert.equal(G.taskProgress(gb, sb.gp, t0, NOW).state, 'doing', '2 réussites valident l étape mais le bloc n est pas ✓ avant la moitié des répétitions');
+  for (let i = 2; i < half; i++) G.applyAttempt(sb, att(s0, noon + 1 + i), O);
+  assert.equal(G.taskProgress(gb, sb.gp, t0, NOW).state, 'done', 'étape validée + moitié des répétitions : bloc ✓');
   assert.equal(JSON.stringify(sb.gt.gb), frozen, 'liste du jour inchangée après les tentatives');
   assert.deepEqual(G.frozenTasks(sb, gb, NOW).map(x => x.t), tasks0.map(x => x.t));
   // tentative insuffisante : le compteur n'avance pas

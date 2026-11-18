@@ -85,7 +85,8 @@ assert.match(u.message, /honn[êe]tes/); assert.ok(u.suggestion.length > 10 && u
 assert.ok(u.suggestedDeadline > dl14, 'date suggérée plus tardive');
 let prev = -1; const seen = new Set(), req = new Set();
 for (let m = 1; m <= 90; m++) { const f = feas(m); assert.ok(rank[f.verdict] >= prev, 'monotone mpd=' + m); prev = rank[f.verdict]; seen.add(f.verdict); req.add(f.requiredMinutes); }
-assert.ok(seen.has('tight') && seen.has('unrealistic') && seen.has('ok'), 'trois verdicts atteignables : ' + [...seen]);
+// ponytail : avec des blocs entiers de 3 min, la bande « serré » de Douce nuit n'est plus atteinte (le manque de séances passe avant le ratio) ; « serré » reste couvert par adapt
+assert.ok(seen.has('unrealistic') && seen.has('ok'), 'verdicts atteignables : ' + [...seen]);
 assert.equal(req.size, 1, 'minutes requises indépendantes du budget quotidien');
 assert.notEqual(makePlan({ song: big, deadline: dl14, now: NOW, minutesPerDay: u.suggestedMinutesPerDay }).feasibility.verdict, 'unrealistic', 'suggestion de minutes valable');
 assert.notEqual(makePlan({ song: big, deadline: u.suggestedDeadline, now: NOW, minutesPerDay: 5 }).feasibility.verdict, 'unrealistic', 'suggestion de date valable');
@@ -250,3 +251,26 @@ const remaining = (pl, from) => pl.sessions.filter(s => s.date >= from).reduce((
 }
 
 console.log('test-songplan : OK');
+
+// ---- blocs : bornes de durée, répétitions, nombre par séance, demi-phrases, raccord ----
+for (const d of DEMOS) {
+  const a = analyzeSong(d);
+  if (a.sections.length > 1) for (const s of a.sections) assert.ok(s.bars[1] - s.bars[0] >= 1, 'phrases voisines très courtes fusionnées : ' + d.title);
+  for (const m of [10, 15, 30, 45]) {
+    const p = makePlan({ song: d, deadline: '2026-12-31', now: NOW, minutesPerDay: m }), tag = `${d.title} ${m} min`;
+    assert.notEqual(p.feasibility.verdict, 'unrealistic', tag);
+    for (const s of p.sessions) {
+      assert.ok(s.tasks.length <= 7, 'au plus 7 blocs : ' + tag);
+      assert.ok(s.tasks.length === 1 || s.tasks.at(-1).minutes >= 3 - 1e-9, 'dernier bloc >= 3 min : ' + tag + ' ' + s.date);
+      assert.ok(Math.abs(s.minutes - s.tasks.reduce((x, t) => x + t.minutes, 0)) <= 1 && s.minutes <= m + 1e-9, 'somme des minutes = budget : ' + tag);
+      for (const t of s.tasks) assert.ok(t.minutes <= 6 && t.reps <= 8 && t.reps >= 1, `bloc <= 6 min et 8 reps : ${tag} ${t.type} ${t.minutes} min x${t.reps}`);
+    }
+  }
+}
+{ // morceau d'une seule phrase : demi-phrases + raccord qui rejoue la phrase entière
+  const j = D('Joyeux'), a = analyzeSong(j), pl = makePlan({ song: j, deadline: '2026-12-31', now: NOW, minutesPerDay: 15 });
+  assert.ok(a.sections.length >= 2 && a.sections.every(s => s.bars[1] - s.bars[0] >= 1 && s.phrase === 1), 'phrase longue coupée en demi-phrases d\'au moins 2 mesures');
+  assert.ok(pl.sessions.some(s => s.tasks.some(t => t.type === 'polish' && t.sectionId === 's1+s2')), 'étape de raccord');
+  const short = makePlan({ song: { title: 'une phrase', bpm: 100, notes: [[60, 0, 1, 'R'], [62, 1, 1, 'R'], [64, 2, 2, 'R'], [65, 4, 1, 'R'], [67, 5, 1, 'R'], [69, 6, 2, 'R']] }, deadline: '2026-12-31', now: NOW, minutesPerDay: 15 });
+  assert.notEqual(short.feasibility.verdict, 'unrealistic'); assert.ok(short.sessions.length > 0);
+}
