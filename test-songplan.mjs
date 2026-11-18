@@ -263,7 +263,7 @@ for (const d of DEMOS) {
       assert.ok(s.tasks.length <= 7, 'au plus 7 blocs : ' + tag);
       assert.ok(s.tasks.length === 1 || s.tasks.at(-1).minutes >= 3 - 1e-9, 'dernier bloc >= 3 min : ' + tag + ' ' + s.date);
       assert.ok(Math.abs(s.minutes - s.tasks.reduce((x, t) => x + t.minutes, 0)) <= 1 && s.minutes <= m + 1e-9, 'somme des minutes = budget : ' + tag);
-      for (const t of s.tasks) assert.ok(t.minutes <= 6 && t.reps <= 8 && t.reps >= 1, `bloc <= 6 min et 8 reps : ${tag} ${t.type} ${t.minutes} min x${t.reps}`);
+      for (const t of s.tasks) assert.ok(t.minutes <= 12 && t.reps <= 16 && t.reps >= 1, `bloc (fusionné : <= 12 min et 16 reps) : ${tag} ${t.type} ${t.minutes} min x${t.reps}`);
     }
   }
 }

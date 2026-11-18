@@ -247,6 +247,10 @@ function schedule(an, o) {
       else if (P && P.minutes + L.minutes <= MAX_BLOCK) { refit(P, r05(P.minutes + L.minutes)); tasks.pop(); }
       else if (P && P.minutes - need >= minBlk) { refit(P, r05(P.minutes - need)); refit(L, r05(L.minutes + need)); }
     }
+    for (let i = tasks.length - 1; i > 0; i--) { // blocs identiques le même jour : un seul bloc (minutes et passages additionnés)
+      const t = tasks[i], q = tasks.find(x => x !== t && x.type === t.type && x.sectionId === t.sectionId && x.hands === t.hands && x.speed === t.speed);
+      if (q && !['fullrun', 'polish', 'review'].includes(t.type)) { q.minutes = r05(q.minutes + t.minutes); q.reps += t.reps; tasks.splice(i, 1); }
+    }
     if (tasks.length) {
       const minutes = r05(tasks.reduce((x, t) => x + t.minutes, 0)), ses = { date: iso(n), minutes, tasks };
       if (minutes < mpd - 1 && n !== margin) ses.note = `Séance courte aujourd'hui : il ne reste que ${minutes} min de travail utile.`;
