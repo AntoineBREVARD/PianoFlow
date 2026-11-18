@@ -2,6 +2,7 @@
 import { LEVELS, ALL } from './curriculum.js';
 import { CHORDS } from './chords.js';
 import { PALIERS as READ } from './reading.js';
+import { shareBlob } from './share.js';
 import { PALIERS as EAR } from './ear.js';
 
 export const KEYS = ['sp.profile', 'sp.progress', 'sp.days', 'sp.plan', 'sp.week', 'sp.chords', 'sp.reading', 'sp.ear', 'sp.guided', 'sp.settings', 'sp.micLat', 'sp.library'];
@@ -190,12 +191,8 @@ export const renderCard = sm => {
 async function shareCard(sm) {
   const blob = await new Promise(r => renderCard(sm).toBlob(r, 'image/png'));
   if (!blob) return "Impossible de créer l'image.";
-  const file = new File([blob], 'pianoflow-progression.png', { type: 'image/png' });
-  if (navigator.canShare?.({ files: [file] }) && navigator.share) {
-    try { await navigator.share({ files: [file], text: "J'apprends le piano avec PianoFlow" }); return "Merci d'avoir partagé !"; }
-    catch (e) { if (e.name === 'AbortError') return ''; }
-  }
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  try { const r = await shareBlob(blob, 'pianoflow-progression.png', { text: "J'apprends le piano avec PianoFlow" }); if (r === 'cancel') return ''; if (r === 'shared') return "Merci d'avoir partagé !"; }
+  catch { return 'Partage impossible sur cet appareil.'; }
   return 'Image enregistrée : tu peux la partager où tu veux.';
 }
 
