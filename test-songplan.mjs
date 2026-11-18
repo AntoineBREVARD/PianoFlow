@@ -236,4 +236,17 @@ const remaining = (pl, from) => pl.sessions.filter(s => s.date >= from).reduce((
   assert.ok(eta(slowPlan, {}, NOW).remainingMinutes > e.remainingMinutes);
 }
 
+// ---- défauts QA : même nombre de séances partout, budget du jour utilisé ou expliqué ----
+{
+  for (const d of DEMOS) for (const mpd of [10, 15, 30]) {
+    const plan = makePlan({ song: d, now: NOW, deadline: addDays(NOW, 30), minutesPerDay: mpd, days: [0, 1, 2, 3, 4, 5, 6], targetSpeed: 1 });
+    const m = /\((\d+) séances planifiées\)/.exec(plan.feasibility.message);
+    if (m) assert.equal(+m[1], plan.sessions.length, `${d.title} ${mpd} : verdict et calendrier doivent compter pareil`);
+    for (const ses of plan.sessions) {
+      assert.ok(Number.isInteger(ses.minutes * 2) && ses.minutes <= mpd + 1e-9, 'minutes entières ou demi, dans le budget');
+      if (ses.minutes < mpd - 1 && !ses.tasks.some(t => t.type === 'fullrun' && t.sectionId === 'all' && /Dernière/.test(t.why))) assert.match(ses.note || '', /Séance courte/, `${d.title} ${mpd} ${ses.date} : écart de budget non expliqué`);
+    }
+  }
+}
+
 console.log('test-songplan : OK');
