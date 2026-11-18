@@ -184,7 +184,8 @@ function schedule(an, o) {
         const pend = st.filter(s => s.idx < s.stages.length);
         if (pend.length) {
           const cap = pend.length === 1 ? Infinity : Math.max(mpd * .6, 3);
-          const s = pend.find(s => s.blockedDay !== n && (used[s.sec.id] || 0) < cap - 1e-9);
+          // ponytail : si tous les passages ont atteint leur plafond, on le lève plutôt que de gâcher le budget du jour (seul le report « passage difficile » reste)
+          const s = pend.find(s => s.blockedDay !== n && (used[s.sec.id] || 0) < cap - 1e-9) || pend.find(s => s.blockedDay !== n);
           if (!s) break;
           const g = s.stages[s.idx], piece = r05(Math.min(s.rem, rem, cap - (used[s.sec.id] || 0)));
           if (piece < 1 && s.rem >= 1) break;
@@ -206,7 +207,11 @@ function schedule(an, o) {
         } else break;
       }
     }
-    if (tasks.length) sessions.push({ date: iso(n), minutes: r05(tasks.reduce((x, t) => x + t.minutes, 0)), tasks });
+    if (tasks.length) {
+      const minutes = r05(tasks.reduce((x, t) => x + t.minutes, 0)), ses = { date: iso(n), minutes, tasks };
+      if (minutes < mpd - 1 && n !== margin) ses.note = `Séance courte aujourd'hui : il ne reste que ${minutes} min de travail utile.`;
+      sessions.push(ses);
+    }
   }
   const leftover = st.filter(s => s.idx < s.stages.length).length + polishQ.length + fullQ;
   // jalons : un par tiers du morceau, puis le jour J
@@ -227,7 +232,7 @@ function judge(an, o, sc) {
   const availableMinutes = sc.avail.length * o.mpd, req = sc.required.total, ratio = req / Math.max(1, availableMinutes);
   const verdict = sc.leftover ? 'unrealistic' : ratio <= .8 ? 'ok' : ratio <= 1 ? 'tight' : 'unrealistic';
   const f = { verdict, requiredMinutes: req, availableMinutes, message: '', suggestion: '' };
-  if (verdict === 'ok') f.message = `Objectif réaliste : environ ${req} min de travail pour ${availableMinutes} min disponibles (${sc.avail.length} séances). Vous gardez de la marge, et une séance manquée ne posera pas de problème.`;
+  if (verdict === 'ok') f.message = `Objectif réaliste : environ ${req} min de travail pour ${availableMinutes} min disponibles (${sc.sessions.length} séances planifiées). Vous gardez de la marge, et une séance manquée ne posera pas de problème.`;
   else if (verdict === 'tight') f.message = `C'est faisable, mais avec peu de marge : environ ${req} min nécessaires pour ${availableMinutes} min disponibles. Chaque séance compte ; si l'une saute, je rééquilibrerai le programme sans vous faire sauter d'étape.`;
   else {
     f.message = ratio > 1

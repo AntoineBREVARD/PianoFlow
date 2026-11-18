@@ -157,5 +157,17 @@ const SEEDS = 12, N = 40, report = {};
   assert.deepEqual(diagnoseAttempt({ mode: 'wait', notes: notes.slice(0, 2) }), []);
 }
 
+// Faux accords : une note à chaque main au même temps n'est PAS un accord (coordination) ; 2 notes d'une même main l'est.
+{
+  const two = [0, 1, 2, 3].flatMap(i => [{ m: 60, s: i, d: 1, h: 'R' }, { m: 48, s: i, d: 1, h: 'L' }]);
+  assert.equal(featuresOf(two).chords, 0); assert.ok(annotate(two).every(a => a.size === 1 && a.coord));
+  const ch = [0, 1, 2, 3].flatMap(i => [{ m: 60, s: i, d: 1, h: 'R' }, { m: 64, s: i, d: 1, h: 'R' }]);
+  assert.equal(featuresOf(ch).chords, 1);
+  const nt = two.map(n => ({ ...n, req: true, hit: false }));
+  assert.ok(!diagnoseAttempt({ mode: 'wait', notes: nt }).some(x => x.kind === 'chords'));
+  const P = update(emptyProfile(), { mode: 'wait', notes: two.map(n => ({ ...n, req: true, hit: true })) });
+  assert.equal(P.dims.chords.n, 0, 'mains simultanées : aucune observation « accords »'); assert.ok(P.dims.coordination.n > 0);
+}
+
 console.log(JSON.stringify(report, null, 1));
 console.log('test-skill OK');

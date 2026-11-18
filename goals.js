@@ -207,6 +207,19 @@ export function taskInfo(goal, t) {
   return { label: `${t.type === 'review' ? 'Révision · ' : ''}${name} · ${HANDS[hands]} · ${Math.round(t.speed * 100)} %`, mode: t.type === 'learn' || t.type === 'hands' ? 'wait' : 'rhythm',
     hands, speed: t.speed, zones, minutes: t.minutes, why: String(t.why || '') };
 }
+// état d'une tâche du jour d'après les tentatives de 'sp.goalProgress' : 'done' (tentative du jour qualifiante), 'doing' (tentative du jour insuffisante), 'todo'
+export function taskState(goal, gp, t, now) {
+  const us = goal.plan.analysis.sections.filter(s => !s.dupOf), id = String(t.sectionId);
+  const ids = id === 'all' ? us.map(s => s.id) : id.split('+'), mine = gp?.[goal.id] || {};
+  const th = t.hands === 'R' || t.hands === 'L' ? t.hands : 'both', acc = t.goal?.accuracy ?? 0.8;
+  const today = a => fin(a.ts) && todayStr(new Date(a.ts)) === now && (a.hands === 'both' || a.hands === th) && a.speed >= t.speed - 0.01;
+  let any = false, all = true;
+  for (const sid of ids) {
+    const l = (mine[sid] || []).filter(today); if (l.length) any = true;
+    if (!l.some(a => a.acc >= acc - 1e-9)) all = false;
+  }
+  return ids.length && all ? 'done' : any ? 'doing' : 'todo';
+}
 export const todayTasks = (goal, now) => nextTasks(goal.plan, now, goal.minutesPerDay + 0.5).map(t => ({ t, info: taskInfo(goal, t) })).filter(x => x.info);
 export const nextSession = (goal, now) => goal.plan.sessions.find(s => s.date > now)?.date || null;
 
@@ -243,7 +256,7 @@ export function openGoalModal({ song, store, modal, closeModal, onSaved, begin }
       if (f.verdict === 'unrealistic' && an.sections.length > 1 && !limit) sug.push('<button class="chip" type="button" id="g_cut">Réduire le morceau</button>');
     }
     $(b, '#g_verdict').innerHTML = `<div class="card" style="margin:0 0 12px"><b>${v[0]} ${v[1]}</b><p style="margin:6px 0">${esc(tu(f.message))}</p>${sug.length ? `<div class="chips">${sug.join('')}</div>` : ''}</div>`;
-    const ses = plan.sessions.slice(0, 6).map(s => `<li><small><b>${DOW[new Date(s.date + 'T12:00:00Z').getUTCDay()]} ${fr(s.date).slice(0, 5)}</b> · ${s.minutes} min · ${esc([...new Set(s.tasks.map(t => taskInfo({ plan }, t)?.label.replace(/ · \d+ %$/, '') || '').filter(Boolean))].slice(0, 2).join(' + '))}</small></li>`).join('');
+    const ses = plan.sessions.slice(0, 6).map(s => `<li><small><b>${DOW[new Date(s.date + 'T12:00:00Z').getUTCDay()]} ${fr(s.date).slice(0, 5)}</b> · ${s.minutes} min${s.note ? ' (courte)' : ''} · ${esc([...new Set(s.tasks.map(t => taskInfo({ plan }, t)?.label.replace(/ · \d+ %$/, '') || '').filter(Boolean))].slice(0, 2).join(' + '))}</small></li>`).join('');
     $(b, '#g_cal').innerHTML = valid ? `<div class="card" style="margin:0 0 12px"><b>Aperçu du calendrier</b> <small class="mut">· ${plan.sessions.length} séances</small><ul style="margin:6px 0;padding-left:18px">${ses}</ul><small class="mut">Jalons : ${esc(plan.milestones.map(m => fr(m.date).slice(0, 5)).slice(0, 4).join(' · '))} · jour J ${fr(plan.deadline)}</small></div>` : '';
     $(b, '#g_ok').disabled = !valid;
     b.querySelectorAll('[data-m]').forEach(x => x.onclick = () => { $(b, '#g_min').value = x.dataset.m; compute(); });
@@ -292,18 +305,22 @@ export function mountToday(box, ctx, now = todayStr()) {
       <small class="mut">${pct} % · ${e ? `${e.mastered}/${e.total} phrases maîtrisées${e.date ? ` · fin estimée le ${fr(e.date)}` : ''}` : ''}</small>
       <div style="margin:6px 0"><small>${strip}</small></div>
       ${g.status === 'done' ? '<p>🎉 Programme terminé : tu maîtrises ce morceau !</p>' : `<p style="margin:6px 0"><b>${PACE[g.pace] || PACE.on_track}</b></p>${g.reasons.map(r => `<small class="mut" style="display:block">${esc(r)}</small>`).join('')}`}
-      ${g.status === 'active' ? (tasks.length ? '<h3 style="margin:10px 0 4px;font-size:15px">Aujourd\'hui</h3><ul class="gl"></ul>' : `<p class="hint">Pas de séance prévue aujourd'hui${nx ? ` · prochaine le ${fr(nx)}` : ''}.</p>`) : ''}
+      ${g.status === 'active' ? (tasks.length ? '<h3 style="margin:10px 0 4px;font-size:15px">Aujourd\'hui</h3><div class="tp"></div><ul class="gl"></ul>' : `<p class="hint">Pas de séance prévue aujourd'hui${nx ? ` · prochaine le ${fr(nx)}` : ''}.</p>`) : ''}
       <div class="actions"><button class="ghost gx"></button></div>`;
     sec.querySelector('.gt').textContent = g.title;
     const gx = sec.querySelector('.gx'); gx.textContent = g.status === 'done' ? 'OK, archiver' : 'Abandonner';
     gx.onclick = () => { if (g.status === 'done' || (ctx.confirm || confirm)('Abandonner ce programme ?')) { g.status = 'archived'; save(ctx.store, st); ctx.refresh?.(); } };
-    const ul = sec.querySelector('.gl');
-    tasks.forEach(({ t, info }) => {
+    const ul = sec.querySelector('.gl'), states = tasks.map(x => taskState(g, st.gp, x.t, now)), nDone = states.filter(x => x === 'done').length;
+    if (ul) {
+      const ses = g.plan.sessions.find(x => x.date === now);
+      sec.querySelector('.tp').innerHTML = `<small>${nDone}/${tasks.length} tâches aujourd'hui</small><div class="progress"><div style="width:${Math.round(100 * nDone / tasks.length)}%"></div></div>${nDone === tasks.length ? '<small class="mut" style="display:block">Séance du jour terminée, bravo. À demain !</small>' : ses?.note ? `<small class="mut" style="display:block">${esc(ses.note)}</small>` : ''}`;
+    }
+    tasks.forEach(({ t, info }, i) => {
       const li = document.createElement('li');
       li.innerHTML = '<div class="info"><b></b><small></small></div>';
-      li.querySelector('b').textContent = info.label;
+      li.querySelector('b').textContent = ({ done: '✓ ', doing: '◐ ', todo: '○ ' })[states[i]] + info.label;
       li.querySelector('small').textContent = `~${info.minutes} min${info.why ? ' · ' + info.why : ''}`;
-      const bt = document.createElement('button'); bt.className = 'primary'; bt.textContent = 'Jouer';
+      const bt = document.createElement('button'); bt.className = states[i] === 'done' ? 'ghost' : 'primary'; bt.textContent = states[i] === 'done' ? 'Refaire' : 'Jouer';
       bt.onclick = () => runTask(g, info, ctx);
       li.append(bt); ul.append(li);
     });

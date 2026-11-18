@@ -79,3 +79,20 @@ assert.equal(G.load(store).goals.length, 1); assert.ok(!('zombie' in store.m['sp
 assert.equal(G.tu('Vous gardez de la marge.'), 'Tu gardes de la marge.');
 assert.equal(mk(add(NOW, -2)).plan.sessions.length, 0);
 console.log('test-goals OK');
+
+// ---- état des tâches du jour (accueil) ----
+{
+  const gg = mk(add(NOW, 60), 15), ts0 = Date.parse(NOW + 'T10:00:00'), tk = G.todayTasks(gg, NOW)[0].t, sid = String(tk.sectionId).split('+')[0];
+  const th = tk.hands === 'R' || tk.hands === 'L' ? tk.hands : 'both', accT = tk.goal.accuracy;
+  const gpOf = a => ({ [gg.id]: { [sid]: a } }), at = o => ({ acc: accT, speed: tk.speed, hands: th, ts: ts0, ...o });
+  const only = String(tk.sectionId).includes('+') || tk.sectionId === 'all' ? null : true;
+  console.log('tâche testée:', tk.sectionId); if (only) {
+    assert.equal(G.taskState(gg, {}, tk, NOW), 'todo');
+    assert.equal(G.taskState(gg, gpOf([at({})]), tk, NOW), 'done');
+    assert.equal(G.taskState(gg, gpOf([at({ acc: accT - 0.2 })]), tk, NOW), 'doing', 'précision insuffisante = en cours');
+    assert.equal(G.taskState(gg, gpOf([at({ speed: tk.speed / 2 })]), tk, NOW), 'todo', 'vitesse insuffisante : tâche non entamée');
+    assert.equal(G.taskState(gg, gpOf([at({ ts: ts0 - 864e5 })]), tk, NOW), 'todo', 'tentative d hier ignorée');
+    if (th !== 'both') assert.equal(G.taskState(gg, gpOf([at({ hands: th === 'R' ? 'L' : 'R' })]), tk, NOW), 'todo', 'autre main ignorée');
+  }
+}
+console.log('test-goals : état des tâches OK');
