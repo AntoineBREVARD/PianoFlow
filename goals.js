@@ -214,8 +214,8 @@ export function taskInfo(goal, t) {
   const secs = goal.plan.analysis.sections, by = id => secs.find(s => s.id === id), id = String(t.sectionId);
   let zones = null, name = null;
   if (id === 'all') name = 'Morceau entier';
-  else if (id.includes('+')) { const [a, b] = id.split('+').map(by); if (a && b) { zones = [[a.startBeat, b.endBeat]]; name = `Phrases ${a.id.slice(1)}-${b.id.slice(1)}`; } }
-  else { const s = by(id); if (s) { zones = [[s.startBeat, s.endBeat]]; name = 'Phrase ' + s.id.slice(1); } }
+  else if (id.includes('+')) { const [a, b] = id.split('+').map(by); if (a && b) { zones = [[a.startBeat, b.endBeat]]; name = a.phrase && a.phrase === b.phrase ? `Phrase ${a.phrase} entière` : `Phrases ${a.id.slice(1)}-${b.id.slice(1)}`; } }
+  else { const s = by(id); if (s) { zones = [[s.startBeat, s.endBeat]]; name = s.part ? `Phrase ${s.phrase} (${s.part === 1 ? 'début' : 'fin'})` : 'Phrase ' + s.id.slice(1); } }
   if (!name) return null;
   const hands = t.hands === 'R' || t.hands === 'L' ? t.hands : 'both';
   return { label: `${t.type === 'review' ? 'Révision · ' : ''}${name} · ${HANDS[hands]} · ${Math.round(t.speed * 100)} % · ${t.reps} fois`, mode: t.type === 'learn' || t.type === 'hands' ? 'wait' : 'rhythm',
@@ -223,7 +223,7 @@ export function taskInfo(goal, t) {
 }
 // état d'une tâche du jour d'après les tentatives de 'sp.goalProgress' : 'done' (tentative du jour qualifiante), 'doing' (tentative du jour insuffisante), 'todo'
 // bloc = une étape d'une phrase × reps répétitions. n = tentatives du jour qualifiantes (précision, vitesse, main) ;
-// un bloc dont l'étape est déjà validée (maîtrise) est ✓ sans objet. Retourne { state: 'done'|'doing'|'todo', n, reps }.
+// ✓ quand le compteur est plein, ou quand l'étape est validée (maîtrise) ET que la moitié au moins des répétitions est faite. Retourne { state: 'done'|'doing'|'todo', n, reps }.
 export function taskProgress(goal, gp, t, now) {
   const us = goal.plan.analysis.sections.filter(s => !s.dupOf), id = String(t.sectionId);
   const ids = id === 'all' ? us.map(s => s.id) : id.split('+'), mine = gp?.[goal.id] || {}, reps = Math.max(1, Math.floor(+t.reps) || 1);
@@ -238,7 +238,7 @@ export function taskProgress(goal, gp, t, now) {
   const sec = ids.length === 1 && !['review', 'polish', 'fullrun'].includes(t.type) ? us.find(s => s.id === ids[0]) : null;
   if (sec) {
     const L = ladder(sec, goal.plan.targetSpeed), k = L.findIndex(x => x.h === th && Math.abs(x.s - t.speed) < 0.011);
-    if (k >= 0 && masteryOf(sec, mine[sec.id], goal.plan.targetSpeed).stage > k) return { state: 'done', n: reps, reps };
+    if (k >= 0 && masteryOf(sec, mine[sec.id], goal.plan.targetSpeed).stage > k && n >= Math.ceil(reps / 2)) return { state: 'done', n: Math.min(n, reps), reps };
   }
   return { state: n >= reps ? 'done' : any ? 'doing' : 'todo', n: Math.min(n, reps), reps };
 }

@@ -78,18 +78,27 @@ export function analyzeSong(song) {
     cuts.push([a, a + len - 1]); a += len;
   }
   if (cuts.length > 1 && cuts.at(-1)[1] === cuts.at(-1)[0] && cuts.at(-2)[1] - cuts.at(-2)[0] < 7) { const l = cuts.pop(); cuts.at(-1)[1] = l[1]; }
+  // phrase trop longue pour un seul passage de travail (> 4 mesures ou > 30 notes) : deux demi-phrases d'au moins 2 mesures, coupées sur un silence / une note longue, sinon au milieu
+  const parts = [];
+  cuts.forEach(([a, b], p) => {
+    const cnt = ns.filter(n => n.s >= 4 * a - 1e-9 && n.s < 4 * b + 4 - 1e-9).length, len = b - a + 1;
+    if (len < 4 || (len <= 4 && cnt <= 30)) { parts.push([a, b, p + 1, 0]); return; }
+    let k = a + 1, best = -1e9;
+    for (let i = a + 1; i <= b - 2; i++) { const sc = cutScore(i, a, i - a + 1) - Math.abs(i - (a + b - 1) / 2) * .5; if (sc > best) { best = sc; k = i; } }
+    parts.push([a, k, p + 1, 1], [k + 1, b, p + 1, 2]);
+  });
   const seen = new Map();
-  const sections = cuts.map(([a, b], i) => {
+  const sections = parts.map(([a, b, phrase, part], i) => {
     const sub = ns.filter(n => n.s >= 4 * a - 1e-9 && n.s < 4 * b + 4 - 1e-9), beats = 4 * (b - a + 1);
     const features = bandFeatures(sub, beats, bpm), key = sig.slice(a, b + 1).join('|');
-    const sec = { id: 's' + (i + 1), bars: [a + 1, b + 1], startBeat: 4 * a, endBeat: 4 * b + 4, features, difficulty: r2(diffOf(features)), label: a === b ? `Mesure ${a + 1}` : `Mesures ${a + 1}-${b + 1}` };
+    const sec = { id: 's' + (i + 1), bars: [a + 1, b + 1], startBeat: 4 * a, endBeat: 4 * b + 4, features, difficulty: r2(diffOf(features)), label: a === b ? `Mesure ${a + 1}` : `Mesures ${a + 1}-${b + 1}`, ...(part ? { phrase, part } : {}) };
     if (sub.length && seen.has(key)) sec.dupOf = seen.get(key); else if (sub.length) seen.set(key, sec.id);
     return sec;
   });
   const uniq = sections.filter(s => !s.dupOf), w = s => s.bars[1] - s.bars[0] + 1;
   const wsum = uniq.reduce((x, s) => x + w(s), 0) || 1;
   const diff = clamp(uniq.reduce((x, s) => x + s.difficulty * w(s), 0) / wsum * .85 + Math.max(...uniq.map(s => s.difficulty)) * .15);
-  const minutesEstimate = Math.round(uniq.reduce((x, s) => x + stageList(s, 1, null, 1).reduce((y, g) => y + g.minutes, 0), 0) * 1.25);
+  const minutesEstimate = Math.round(uniq.reduce((x, s) => x + stageList(s, 1, null, 1, bpm).reduce((y, g) => y + g.minutes, 0), 0) * 1.25);
   return { bpm, bars, sections, overall: { difficulty: r2(diff), level: levelOf(diff), minutesEstimate } };
 }
 
@@ -106,12 +115,14 @@ export function masteryFrom(attempts, target = 1) {
 }
 
 // --- étapes d'une section : main(s) puis ensemble puis tempo 60 → 100 % ---
-function stageList(sec, targetSpeed, skill, slow) {
+function stageList(sec, targetSpeed, skill, slow, bpm = 100) {
   const f = sec.features, bars = sec.bars[1] - sec.bars[0] + 1, d = sec.difficulty, st = [];
   const add = (type, hands, speed, w, acc) => {
     const ff = { ...f, hands, handIndependence: hands === 'both' ? f.handIndependence : 0, difficulty: d };
     const factor = clamp(predict(skill, ff, speed).expectedAttempts / 3, .5, 4);
-    st.push({ type, hands, speed, acc, minutes: Math.max(BLOCK_MIN, r05(bars * (.35 + 1.4 * d) * w * factor * slow)) });
+    let minutes = Math.max(BLOCK_MIN, r05(bars * (.35 + 1.4 * d) * w * factor * slow));
+    const bm = blockMax(bars, bpm, speed); if (minutes > bm) minutes = Math.round(minutes / bm) * bm; // étape = nombre entier de blocs pleins (≤ 6 min, ≤ 8 répétitions)
+    st.push({ type, hands, speed, acc, minutes });
   };
   if (f.hands === 'both') { add('learn', 'R', .5, .9, .8); add('hands', 'L', .5, .8, .8); add('together', 'both', .5, 1.3, .8); }
   else add('learn', f.hands, .5, .9, .8);
@@ -127,7 +138,11 @@ const WHY = {
   polish: 'On relie deux phrases pour que le passage de l\'une à l\'autre soit fluide.',
   fullrun: 'Passage complet, comme au jour J : on joue sans s\'arrêter.',
 };
-const reps = (min, bars, bpm, speed) => Math.round(clamp(min * 60 / (bars * 4 * 60 / bpm / Math.max(.3, speed) * 1.3), 2, 20));
+// un passage = jeu + repos/écoute (au moins 22,5 s) ; un bloc dure au plus 6 min et 8 répétitions
+const MAX_REPS = 8, MAX_BLOCK = 6, MAX_BLOCKS = 7, REP_S = 22.5;
+const repS = (bars, bpm, speed) => Math.max(REP_S, bars * 4 * 60 / bpm / Math.max(.3, speed) * 1.3);
+const reps = (min, bars, bpm, speed) => Math.round(clamp(min * 60 / repS(bars, bpm, speed), 1, MAX_REPS));
+const blockMax = (bars, bpm, speed) => Math.min(MAX_BLOCK, (Math.floor(MAX_REPS * repS(bars, bpm, speed) / 30) / 2)); // ≤ 8 passages
 const mkTask = (type, sec, hands, speed, minutes, acc, bpm, why) => ({
   type, sectionId: sec.id, hands, speed, reps: reps(minutes, sec.bars[1] - sec.bars[0] + 1, bpm, speed),
   goal: { accuracy: acc, speed }, why: why || WHY[type], minutes,
@@ -141,7 +156,7 @@ function schedule(an, o) {
   const margin = !o.noMargin && avail.length >= 4 ? avail.at(-1) : null, lastN = avail.at(-1);
   const revs = {}, track = {}, doneDay = {}, baseline = {};
   const st = uniq.map(sec => {
-    const p = progress?.[sec.id], m = clamp(p?.mastery ?? 0, 0, 1), stages = stageList(sec, targetSpeed, skill, slow);
+    const p = progress?.[sec.id], m = clamp(p?.mastery ?? 0, 0, 1), stages = stageList(sec, targetSpeed, skill, slow, bpm);
     const done = m >= MASTER ? stages.length : Math.floor(m / MASTER * stages.length);
     baseline[sec.id] = m; track[sec.id] = [];
     return { sec, stages, idx: done, rem: stages[done]?.minutes, p, m };
@@ -161,17 +176,18 @@ function schedule(an, o) {
     left.forEach((I, i) => addRev(s.sec, nowN - el, I, i === 0)); reqReview += left.length * rvMin(s.sec);
   }
   const reqLearn = st.reduce((x, s) => x + s.stages.slice(s.idx).reduce((y, g, i) => y + (i === 0 ? s.rem : g.minutes), 0), 0);
-  const songMin = an.bars * 4 / bpm / Math.max(.3, targetSpeed), fullMin = Math.max(2, r05(songMin * 1.5));
+  const songMin = an.bars * 4 / bpm / Math.max(.3, targetSpeed), fullMin = Math.min(MAX_BLOCK, Math.max(2, r05(songMin * 1.5)));
   const polish = []; for (let i = 0; i + 1 < an.sections.length; i++) {
     const a = an.sections[i], b = an.sections[i + 1], d = (a.difficulty + b.difficulty) / 2;
-    polish.push({ a, b, minutes: Math.max(1.5, r05((bars(a) + bars(b)) * .3 * (.5 + d))) });
+    polish.push({ a, b, minutes: Math.min(MAX_BLOCK, Math.max(1.5, r05((bars(a) + bars(b)) * .3 * (.5 + d)))) });
   }
+  polish.sort((x, y) => (y.a.phrase && y.a.phrase === y.b.phrase) - (x.a.phrase && x.a.phrase === x.b.phrase)); // raccords des demi-phrases d'abord (tri stable)
   const reqPolish = polish.reduce((x, p) => x + p.minutes, 0), reqFull = 2 * fullMin;
   const required = { learn: reqLearn, review: reqReview, polish: reqPolish, full: reqFull, total: Math.round(reqLearn + reqReview + reqPolish + reqFull) };
 
   const sessions = []; let fullQ = 1; const polishQ = [...polish];
   for (let k = 0; k < avail.length; k++) {
-    const n = avail[k], tasks = []; let rem = mpd;
+    const n = avail[k], tasks = []; let rem = mpd; const minBlk = Math.min(BLOCK_MIN, mpd);
     for (const t of revs[n] || []) {
       if (t.minutes <= rem + 1e-9) { tasks.push(t); rem -= t.minutes; }
       else if (avail[k + 1] != null) (revs[avail[k + 1]] ||= []).unshift(t);
@@ -179,18 +195,26 @@ function schedule(an, o) {
     if (n === margin) {
       const m = Math.min(fullMin, r05(rem)); if (m >= 1) tasks.push({ type: 'fullrun', sectionId: 'all', hands: 'both', speed: targetSpeed, reps: Math.max(1, Math.round(m / Math.max(.5, songMin))), goal: { accuracy: .85, speed: targetSpeed }, why: 'Dernière séance avant le jour J : un passage complet tranquille, puis on s\'arrête. Pas de nouveau travail la veille.', minutes: m });
     } else {
-      const used = {};
+      const used = {}, nb = {};
       for (;;) {
-        if (rem < 1) break;
+        if (rem < 1 || tasks.length >= MAX_BLOCKS) break;
         const pend = st.filter(s => s.idx < s.stages.length);
         if (pend.length) {
           const cap = pend.length === 1 ? Infinity : Math.max(mpd * .6, 3);
+          // un bloc : entre minBlk et blockMax minutes, sans laisser de reste de travail inférieur à minBlk
+          const pick = (s, free) => {
+            const g = s.stages[s.idx], bm = blockMax(bars(s.sec), bpm, g.speed);
+            let p = r05(Math.min(s.rem, rem, bm, free ? Infinity : cap - (used[s.sec.id] || 0))); const left = r05(s.rem - p);
+            if (left > 0 && left < minBlk) p = r05(p - (minBlk - left));
+            return p >= minBlk - 1e-9 ? p : 0;
+          };
           // ponytail : si tous les passages ont atteint leur plafond, on le lève plutôt que de gâcher le budget du jour (seul le report « passage difficile » reste)
-          const s = pend.find(s => s.blockedDay !== n && (used[s.sec.id] || 0) < cap - 1e-9) || pend.find(s => s.blockedDay !== n);
+          const ok = pend.filter(s => s.blockedDay !== n && (nb[s.sec.id + s.idx] || 0) < 2); // jamais plus de 2 blocs identiques le même jour
+          let free = false, s = ok.find(s => pick(s));
+          if (!s) { free = true; s = ok.find(s => pick(s, true)); }
           if (!s) break;
-          const g = s.stages[s.idx], piece = r05(Math.min(s.rem, rem, cap - (used[s.sec.id] || 0)));
-          if (piece < 1 && s.rem >= 1) break;
-          const mins = piece < 1 ? s.rem : piece;
+          const g = s.stages[s.idx], mins = pick(s, free);
+          nb[s.sec.id + s.idx] = (nb[s.sec.id + s.idx] || 0) + 1;
           tasks.push(mkTask(g.type, s.sec, g.hands, g.speed, mins, g.acc, bpm));
           track[s.sec.id].push({ date: iso(n), minutes: mins });
           used[s.sec.id] = (used[s.sec.id] || 0) + mins; rem -= mins; s.rem = r05(s.rem - mins);
@@ -207,6 +231,13 @@ function schedule(an, o) {
           tasks.push({ type: 'fullrun', sectionId: 'all', hands: 'both', speed: targetSpeed, reps: 1, goal: { accuracy: .85, speed: targetSpeed }, why: WHY.fullrun, minutes: m });
         } else break;
       }
+    }
+    const L = tasks.at(-1); // dernier bloc trop court : on le prolonge si le budget le permet, sinon on le fusionne (ou on lui cède du temps) avec le précédent
+    if (L && L.minutes < minBlk - 1e-9) {
+      const P = tasks.at(-2), need = r05(minBlk - L.minutes), refit = (t, m) => { t.minutes = m; if (t.type !== 'polish' && t.type !== 'fullrun') t.reps = reps(m, bars(an.sections.find(x => x.id === t.sectionId) || an.sections[0]), bpm, t.speed); };
+      if (need <= rem + 1e-9) refit(L, r05(L.minutes + need));
+      else if (P && P.minutes + L.minutes <= MAX_BLOCK) { refit(P, r05(P.minutes + L.minutes)); tasks.pop(); }
+      else if (P && P.minutes - need >= minBlk) { refit(P, r05(P.minutes - need)); refit(L, r05(L.minutes + need)); }
     }
     if (tasks.length) {
       const minutes = r05(tasks.reduce((x, t) => x + t.minutes, 0)), ses = { date: iso(n), minutes, tasks };
@@ -248,7 +279,7 @@ function judge(an, o, sc) {
       if (!s2.leftover && s2.required.total / Math.max(1, s2.avail.length * o.mpd) <= .85) found = dl;
     }
     const uniq = an.sections.filter(s => !s.dupOf); let acc = 0, k = 0;
-    const per = uniq.map(s => stageList(s, o.targetSpeed, o.skill, o.slow).reduce((x, g) => x + g.minutes, 0));
+    const per = uniq.map(s => stageList(s, o.targetSpeed, o.skill, o.slow, an.bpm).reduce((x, g) => x + g.minutes, 0));
     for (; k < uniq.length && acc + per[k] <= availableMinutes * .6; k++) acc += per[k];
     f.suggestedMinutesPerDay = needMpd; if (found) f.suggestedDeadline = iso(found);
     f.suggestion = [`passer à environ ${needMpd} min par jour`, found ? `repousser l'échéance au ${fr(found)}` : null,
