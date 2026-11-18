@@ -65,7 +65,7 @@ for (const d of DEMOS) {
   let done; const revs = [];
   for (const s of p.sessions) for (const t of s.tasks) {
     if (t.sectionId === 's1' && t.type === 'tempo' && t.speed === 1) done = s.date;
-    if (t.sectionId === 's1' && t.type === 'review') revs.push(s.date);
+    if (t.sectionId === 's1' && t.type === 'review' && !t.filler) revs.push(s.date);
   }
   const gaps = revs.map(r => (Date.parse(r) - Date.parse(done)) / 864e5);
   assert.ok(gaps.length >= 3 && gaps[0] >= 1 && gaps.some(g => g >= 7) && gaps.some(g => g >= 3 && g < 7), 'révisions espacées : ' + gaps);
