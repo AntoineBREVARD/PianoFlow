@@ -78,11 +78,24 @@ export function fixGoalProgress(v) {
   }
   return out;
 }
-export const load = store => ({ goals: fixGoals(store.get('sp.goals', [])), gp: fixGoalProgress(store.get('sp.goalProgress', {})) });
+const okTask = t => isObj(t) && typeof t.type === 'string' && typeof t.sectionId === 'string' && ['R', 'L', 'both'].includes(t.hands) && fin(t.speed) && t.speed > 0 && fin(t.minutes) && t.minutes > 0
+  && Number.isInteger(t.reps) && t.reps >= 1 && t.reps <= 99 && isObj(t.goal) && fin(t.goal.accuracy);
+// liste figée du jour : une entrée corrompue est simplement ignorée (elle sera regénérée)
+export function fixGoalToday(v) {
+  const out = {};
+  if (!isObj(v)) return out;
+  for (const gid of Object.keys(v).slice(0, 50)) {
+    const e = v[gid];
+    if (isObj(e) && ISO.test(e.date) && Array.isArray(e.tasks) && e.tasks.length > 0 && e.tasks.length <= 40 && e.tasks.every(okTask)) out[gid] = { date: e.date, tasks: e.tasks.map(t => ({ ...t, why: String(t.why ?? '').slice(0, 300) })) };
+  }
+  return out;
+}
+export const load = store => ({ goals: fixGoals(store.get('sp.goals', [])), gp: fixGoalProgress(store.get('sp.goalProgress', {})), gt: fixGoalToday(store.get('sp.goalToday', {})) });
 export function save(store, st) {
   const live = new Set(st.goals.map(g => g.id));
   for (const k of Object.keys(st.gp)) if (!live.has(k)) delete st.gp[k];
-  store.set('sp.goals', st.goals); store.set('sp.goalProgress', st.gp);
+  st.gt ||= {}; for (const k of Object.keys(st.gt)) if (!live.has(k)) delete st.gt[k];
+  store.set('sp.goals', st.goals); store.set('sp.goalProgress', st.gp); store.set('sp.goalToday', st.gt);
 }
 
 // ---------- création ----------
@@ -161,7 +174,7 @@ function paceReasons(goal, res, prog) {
   const us = goal.plan.analysis.sections.filter(s => !s.dupOf), lines = [];
   if (res.status === 'behind') {
     const w = us.filter(s => (prog[s.id]?.mastery ?? 0) < MASTER && prog[s.id]?.attempts).sort((a, b) => prog[a.id].mastery - prog[b.id].mastery)[0];
-    lines.push(w ? `Tu avances moins vite que prévu : on rallonge la phrase ${w.id.slice(1)} plutôt que de passer à la suite. Chaque main a son rythme, ce n'est pas grave.` : 'Tu avances moins vite que prévu : on reste sur ce qui n\'est pas encore solide plutôt que de passer à la suite.');
+    lines.push(w ? `Tu avances moins vite que prévu : demain on reviendra sur la phrase ${w.id.slice(1)} : on la rallonge plutôt que de passer à la suite. Chaque main a son rythme, ce n'est pas grave.` : 'Tu avances moins vite que prévu : demain on reviendra sur ce qui n\'est pas encore solide plutôt que de passer à la suite.');
   } else if (res.status === 'ahead') lines.push('Tu avances plus vite que prévu : bravo ! Tu pourras finir avant la date limite.');
   else lines.push('Tu es dans les temps : continue comme ça.');
   return [...lines, ...res.reasons.slice(1).map(tu), ...(res.status === 'ahead' ? res.changes.slice(0, 1).map(tu) : [])];
@@ -182,6 +195,7 @@ export function applyAttempt(st, attempt, { now = todayStr(), profile, mod = SK 
   for (const g of st.goals) {
     if (g.status !== 'active' || g.songId !== String(attempt.songId)) continue;
     const hits = sectionHits(g.plan, attempt); if (!hits.length) continue;
+    ensureToday(st, g, now); // la liste du jour est figée avant que le calendrier ne bouge
     const t = { speed: clamp(+attempt.speed || 0, 0, 3), hands: handsOf(attempt), ts: fin(attempt.ts) ? attempt.ts : Date.now() };
     for (const h of hits) pushAtt(st.gp, g.id, h.sid, { acc: r2(h.acc), ...t });
     out.push(reschedule(g, st, { now, profile, mod }));
@@ -204,23 +218,42 @@ export function taskInfo(goal, t) {
   else { const s = by(id); if (s) { zones = [[s.startBeat, s.endBeat]]; name = 'Phrase ' + s.id.slice(1); } }
   if (!name) return null;
   const hands = t.hands === 'R' || t.hands === 'L' ? t.hands : 'both';
-  return { label: `${t.type === 'review' ? 'Révision · ' : ''}${name} · ${HANDS[hands]} · ${Math.round(t.speed * 100)} %`, mode: t.type === 'learn' || t.type === 'hands' ? 'wait' : 'rhythm',
-    hands, speed: t.speed, zones, minutes: t.minutes, why: String(t.why || '') };
+  return { label: `${t.type === 'review' ? 'Révision · ' : ''}${name} · ${HANDS[hands]} · ${Math.round(t.speed * 100)} % · ${t.reps} fois`, mode: t.type === 'learn' || t.type === 'hands' ? 'wait' : 'rhythm',
+    hands, speed: t.speed, zones, minutes: t.minutes, reps: t.reps, why: String(t.why || '') };
 }
 // état d'une tâche du jour d'après les tentatives de 'sp.goalProgress' : 'done' (tentative du jour qualifiante), 'doing' (tentative du jour insuffisante), 'todo'
-export function taskState(goal, gp, t, now) {
+// bloc = une étape d'une phrase × reps répétitions. n = tentatives du jour qualifiantes (précision, vitesse, main) ;
+// un bloc dont l'étape est déjà validée (maîtrise) est ✓ sans objet. Retourne { state: 'done'|'doing'|'todo', n, reps }.
+export function taskProgress(goal, gp, t, now) {
   const us = goal.plan.analysis.sections.filter(s => !s.dupOf), id = String(t.sectionId);
-  const ids = id === 'all' ? us.map(s => s.id) : id.split('+'), mine = gp?.[goal.id] || {};
+  const ids = id === 'all' ? us.map(s => s.id) : id.split('+'), mine = gp?.[goal.id] || {}, reps = Math.max(1, Math.floor(+t.reps) || 1);
   const th = t.hands === 'R' || t.hands === 'L' ? t.hands : 'both', acc = t.goal?.accuracy ?? 0.8;
   const today = a => fin(a.ts) && todayStr(new Date(a.ts)) === now && (a.hands === 'both' || a.hands === th) && a.speed >= t.speed - 0.01;
-  let any = false, all = true;
+  let any = false, n = Infinity;
   for (const sid of ids) {
     const l = (mine[sid] || []).filter(today); if (l.length) any = true;
-    if (!l.some(a => a.acc >= acc - 1e-9)) all = false;
+    n = Math.min(n, l.filter(a => a.acc >= acc - 1e-9).length);
   }
-  return ids.length && all ? 'done' : any ? 'doing' : 'todo';
+  if (!ids.length || n === Infinity) n = 0;
+  const sec = ids.length === 1 && !['review', 'polish', 'fullrun'].includes(t.type) ? us.find(s => s.id === ids[0]) : null;
+  if (sec) {
+    const L = ladder(sec, goal.plan.targetSpeed), k = L.findIndex(x => x.h === th && Math.abs(x.s - t.speed) < 0.011);
+    if (k >= 0 && masteryOf(sec, mine[sec.id], goal.plan.targetSpeed).stage > k) return { state: 'done', n: reps, reps };
+  }
+  return { state: n >= reps ? 'done' : any ? 'doing' : 'todo', n: Math.min(n, reps), reps };
 }
+export const taskState = (goal, gp, t, now) => taskProgress(goal, gp, t, now).state;
 export const todayTasks = (goal, now) => nextTasks(goal.plan, now, goal.minutesPerDay + 0.5).map(t => ({ t, info: taskInfo(goal, t) })).filter(x => x.info);
+// liste figée du jour (st.gt[goal.id] = { date, tasks }) : générée une fois par jour, jamais réorganisée ensuite.
+// Retourne true si l'entrée a été (re)créée (absente, d'un autre jour, corrompue ou force) : l'appelant sauvegarde.
+export function ensureToday(st, goal, now, force = false) {
+  const gt = (st.gt ||= {}), e = gt[goal.id];
+  if (!force && e && e.date === now && Array.isArray(e.tasks) && e.tasks.every(t => taskInfo(goal, t))) return false;
+  const tasks = todayTasks(goal, now).map(x => x.t);
+  if (tasks.length) gt[goal.id] = { date: now, tasks }; else delete gt[goal.id];
+  return true;
+}
+export const frozenTasks = (st, goal, now) => { const e = st.gt?.[goal.id]; return (e && e.date === now ? e.tasks : []).map(t => ({ t, info: taskInfo(goal, t) })).filter(x => x.info); };
 export const nextSession = (goal, now) => goal.plan.sessions.find(s => s.date > now)?.date || null;
 
 // ---------- interface ----------
@@ -256,7 +289,7 @@ export function openGoalModal({ song, store, modal, closeModal, onSaved, begin }
       if (f.verdict === 'unrealistic' && an.sections.length > 1 && !limit) sug.push('<button class="chip" type="button" id="g_cut">Réduire le morceau</button>');
     }
     $(b, '#g_verdict').innerHTML = `<div class="card" style="margin:0 0 12px"><b>${v[0]} ${v[1]}</b><p style="margin:6px 0">${esc(tu(f.message))}</p>${sug.length ? `<div class="chips">${sug.join('')}</div>` : ''}</div>`;
-    const ses = plan.sessions.slice(0, 6).map(s => `<li><small><b>${DOW[new Date(s.date + 'T12:00:00Z').getUTCDay()]} ${fr(s.date).slice(0, 5)}</b> · ${s.minutes} min${s.note ? ' (courte)' : ''} · ${esc([...new Set(s.tasks.map(t => taskInfo({ plan }, t)?.label.replace(/ · \d+ %$/, '') || '').filter(Boolean))].slice(0, 2).join(' + '))}</small></li>`).join('');
+    const ses = plan.sessions.slice(0, 6).map(s => `<li><small><b>${DOW[new Date(s.date + 'T12:00:00Z').getUTCDay()]} ${fr(s.date).slice(0, 5)}</b> · ${s.minutes} min${s.note ? ' (courte)' : ''} · ${esc([...new Set(s.tasks.map(t => taskInfo({ plan }, t)?.label.replace(/ · \d+ %( · \d+ fois)?$/, '') || '').filter(Boolean))].slice(0, 2).join(' + '))}</small></li>`).join('');
     $(b, '#g_cal').innerHTML = valid ? `<div class="card" style="margin:0 0 12px"><b>Aperçu du calendrier</b> <small class="mut">· ${plan.sessions.length} séances</small><ul style="margin:6px 0;padding-left:18px">${ses}</ul><small class="mut">Jalons : ${esc(plan.milestones.map(m => fr(m.date).slice(0, 5)).slice(0, 4).join(' · '))} · jour J ${fr(plan.deadline)}</small></div>` : '';
     $(b, '#g_ok').disabled = !valid;
     b.querySelectorAll('[data-m]').forEach(x => x.onclick = () => { $(b, '#g_min').value = x.dataset.m; compute(); });
@@ -291,13 +324,14 @@ export function mountToday(box, ctx, now = todayStr()) {
   let st; try { st = load(ctx.store); } catch { return; }
   const profile = loadSkill(ctx.store);
   try { if (dailyAdapt(st, { now, profile })) save(ctx.store, st); } catch (e) { console.warn(e); }
+  try { let ch = false; for (const g of st.goals.filter(x => x.status === 'active')) ch = ensureToday(st, g, now) || ch; if (ch) save(ctx.store, st); } catch (e) { console.warn(e); }
   for (const g of st.goals.filter(x => x.status !== 'archived').slice(0, 3)) {
     const prog = progressOf(g, st.gp), pct = overallPct(g, prog), left = daysBetween(now, g.deadline);
     let e = null; try { e = eta(g.plan, Object.fromEntries(Object.entries(prog).map(([k, v]) => [k, { mastery: v.mastery, lastTs: v.lastTs }])), now, skillFor(profile, g.plan.bpm)); } catch { /* estimation facultative */ }
     const sec = document.createElement('section'); sec.className = 'card goal';
     const us = g.plan.analysis.sections.filter(s => !s.dupOf);
     const strip = us.map(s => { const m = prog[s.id]; return `<span title="Phrase ${esc(s.id.slice(1))}" style="display:inline-block;width:22px;text-align:center">${m.mastered ? '✓' : m.stage > 0 ? '◐' : '○'}</span>`; }).join('');
-    const tasks = g.status === 'active' ? todayTasks(g, now) : [];
+    const tasks = g.status === 'active' ? frozenTasks(st, g, now) : [];
     const nx = nextSession(g, now);
     sec.innerHTML = `<h2>🎯 Programme : <span class="gt"></span></h2>
       <small class="mut">Date limite : ${fr(g.deadline)} ${left > 0 ? `(dans ${left} j)` : left === 0 ? '(aujourd\'hui)' : '(dépassée)'} · ${esc(g.minutesPerDay)} min/jour</small>
@@ -306,19 +340,21 @@ export function mountToday(box, ctx, now = todayStr()) {
       <div style="margin:6px 0"><small>${strip}</small></div>
       ${g.status === 'done' ? '<p>🎉 Programme terminé : tu maîtrises ce morceau !</p>' : `<p style="margin:6px 0"><b>${PACE[g.pace] || PACE.on_track}</b></p>${g.reasons.map(r => `<small class="mut" style="display:block">${esc(r)}</small>`).join('')}`}
       ${g.status === 'active' ? (tasks.length ? '<h3 style="margin:10px 0 4px;font-size:15px">Aujourd\'hui</h3><div class="tp"></div><ul class="gl"></ul>' : `<p class="hint">Pas de séance prévue aujourd'hui${nx ? ` · prochaine le ${fr(nx)}` : ''}.</p>`) : ''}
-      <div class="actions"><button class="ghost gx"></button></div>`;
+      <div class="actions">${g.status === 'active' ? '<button class="ghost gr">Recalculer mon programme</button>' : ''}<button class="ghost gx"></button></div>`;
     sec.querySelector('.gt').textContent = g.title;
     const gx = sec.querySelector('.gx'); gx.textContent = g.status === 'done' ? 'OK, archiver' : 'Abandonner';
     gx.onclick = () => { if (g.status === 'done' || (ctx.confirm || confirm)('Abandonner ce programme ?')) { g.status = 'archived'; save(ctx.store, st); ctx.refresh?.(); } };
-    const ul = sec.querySelector('.gl'), states = tasks.map(x => taskState(g, st.gp, x.t, now)), nDone = states.filter(x => x === 'done').length;
+    const gr = sec.querySelector('.gr');
+    if (gr) gr.onclick = () => { try { reschedule(g, st, { now, profile }); ensureToday(st, g, now, true); save(ctx.store, st); } catch (e) { console.warn(e); } ctx.refresh?.(); };
+    const ul = sec.querySelector('.gl'), progs = tasks.map(x => taskProgress(g, st.gp, x.t, now)), states = progs.map(x => x.state), nDone = states.filter(x => x === 'done').length;
     if (ul) {
       const ses = g.plan.sessions.find(x => x.date === now);
-      sec.querySelector('.tp').innerHTML = `<small>${nDone}/${tasks.length} tâches aujourd'hui</small><div class="progress"><div style="width:${Math.round(100 * nDone / tasks.length)}%"></div></div>${nDone === tasks.length ? '<small class="mut" style="display:block">Séance du jour terminée, bravo. À demain !</small>' : ses?.note ? `<small class="mut" style="display:block">${esc(ses.note)}</small>` : ''}`;
+      sec.querySelector('.tp').innerHTML = `<small>${nDone}/${tasks.length} blocs aujourd'hui</small><div class="progress"><div style="width:${Math.round(100 * nDone / tasks.length)}%"></div></div>${nDone === tasks.length ? '<small class="mut" style="display:block">Séance du jour terminée, bravo. À demain !</small>' : ses?.note ? `<small class="mut" style="display:block">${esc(ses.note)}</small>` : ''}`;
     }
     tasks.forEach(({ t, info }, i) => {
       const li = document.createElement('li');
       li.innerHTML = '<div class="info"><b></b><small></small></div>';
-      li.querySelector('b').textContent = ({ done: '✓ ', doing: '◐ ', todo: '○ ' })[states[i]] + info.label;
+      li.querySelector('b').textContent = ({ done: '✓ ', doing: '◐ ', todo: '○ ' })[states[i]] + info.label + ` (${progs[i].n}/${progs[i].reps})`;
       li.querySelector('small').textContent = `~${info.minutes} min${info.why ? ' · ' + info.why : ''}`;
       const bt = document.createElement('button'); bt.className = states[i] === 'done' ? 'ghost' : 'primary'; bt.textContent = states[i] === 'done' ? 'Refaire' : 'Jouer';
       bt.onclick = () => runTask(g, info, ctx);
@@ -336,7 +372,7 @@ function runTask(g, info, ctx) {
       const r = res?.find(x => x.goalId === g.id), now = todayStr();
       const hint = r ? (r.done ? '🎉 Morceau maîtrisé : programme terminé !\n' : '') + r.reasons.slice(0, 2).join('\n') + `\nProgression : ${r.pct} %` : '';
       try {
-        const st = load(ctx.store), g2 = st.goals.find(x => x.id === g.id), nx = g2 && g2.status === 'active' ? todayTasks(g2, now)[0] : null;
+        const st = load(ctx.store), g2 = st.goals.find(x => x.id === g.id), nx = g2 && g2.status === 'active' ? frozenTasks(st, g2, now).find(x => taskState(g2, st.gp, x.t, now) !== 'done') : null;
         if (nx) return { label: 'Tâche suivante : ' + nx.info.label, hint, run: () => runTask(g2, nx.info, ctx) };
       } catch { /* sans suite proposée */ }
       return { hint };

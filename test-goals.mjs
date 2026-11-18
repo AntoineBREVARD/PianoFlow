@@ -71,7 +71,7 @@ assert.deepEqual(G.fixGoals('x'), []);
 assert.deepEqual(G.fixGoals([null, 1, {}, { id: 'a', plan: 3 }, { ...g, plan: { ...g.plan, sessions: 'x' } }, { ...g, deadline: 'demain' }]), []);
 assert.deepEqual(G.fixGoalProgress({ a: { s1: [{ acc: 'x', speed: 1 }, { acc: 0.9, speed: 1, hands: 'Z', ts: 1 }] }, b: 4 }), { a: { s1: [{ acc: 0.9, speed: 1, hands: 'both', ts: 1 }] } });
 const store = { m: { 'sp.goals': 'junk', 'sp.goalProgress': [1], 'sp.skill': { v: 9 } }, get(k, d) { return this.m[k] ?? d; }, set(k, v) { this.m[k] = JSON.parse(JSON.stringify(v)); return true; } };
-assert.deepEqual(G.load(store), { goals: [], gp: {} }); assert.deepEqual(G.loadSkill(store), e);
+assert.deepEqual(G.load(store), { goals: [], gp: {}, gt: {} }); assert.deepEqual(G.loadSkill(store), e);
 G.save(store, { goals: [g], gp: { g1: { x: [] }, zombie: {} } });
 assert.equal(G.load(store).goals.length, 1); assert.ok(!('zombie' in store.m['sp.goalProgress']), 'progression orpheline supprimée');
 
@@ -88,11 +88,62 @@ console.log('test-goals OK');
   const only = String(tk.sectionId).includes('+') || tk.sectionId === 'all' ? null : true;
   console.log('tâche testée:', tk.sectionId); if (only) {
     assert.equal(G.taskState(gg, {}, tk, NOW), 'todo');
-    assert.equal(G.taskState(gg, gpOf([at({})]), tk, NOW), 'done');
-    assert.equal(G.taskState(gg, gpOf([at({ acc: accT - 0.2 })]), tk, NOW), 'doing', 'précision insuffisante = en cours');
-    assert.equal(G.taskState(gg, gpOf([at({ speed: tk.speed / 2 })]), tk, NOW), 'todo', 'vitesse insuffisante : tâche non entamée');
+    const R = tk.reps, many = o => Array.from({ length: R }, () => at(o));
+    assert.ok(R >= 1);
+    assert.equal(G.taskState(gg, gpOf(many({})), tk, NOW), 'done');
+    assert.equal(G.taskState(gg, gpOf(many({ acc: accT - 0.2 })), tk, NOW), 'doing', 'précision insuffisante = en cours');
+    assert.equal(G.taskState(gg, gpOf(many({ speed: tk.speed / 2 })), tk, NOW), 'todo', 'vitesse insuffisante : tâche non entamée');
     assert.equal(G.taskState(gg, gpOf([at({ ts: ts0 - 864e5 })]), tk, NOW), 'todo', 'tentative d hier ignorée');
-    if (th !== 'both') assert.equal(G.taskState(gg, gpOf([at({ hands: th === 'R' ? 'L' : 'R' })]), tk, NOW), 'todo', 'autre main ignorée');
+    if (th !== 'both') assert.equal(G.taskState(gg, gpOf(many({ hands: th === 'R' ? 'L' : 'R' })), tk, NOW), 'todo', 'autre main ignorée');
   }
 }
 console.log('test-goals : état des tâches OK');
+
+// ---- blocs : regroupement, compteur, liste figée, changement de jour, corruption ----
+{
+  const mkSong = (song, mpd) => G.createGoal({ song, deadline: add(NOW, 30), minutesPerDay: mpd, days: [0, 1, 2, 3, 4, 5, 6], now: NOW, profile: prof, mod: fake, id: 'gb' });
+  for (const song of DEMOS.slice(0, 3)) for (const mpd of [10, 15, 30]) {
+    const ts = G.todayTasks(mkSong(song, mpd), NOW).map(x => x.t);
+    assert.ok(ts.length >= 1 && ts.length <= 12, `${song.title} ${mpd} min : ${ts.length} blocs`);
+    assert.ok(ts.reduce((x, t) => x + t.minutes, 0) <= mpd + 0.5, 'budget respecté');
+    // seul le dernier bloc de la séance peut être un reste plus court (étape qui se termine ou budget épuisé)
+    for (const t of ts.slice(0, -1).filter(t => ['learn', 'hands', 'together', 'tempo'].includes(t.type))) assert.ok(t.minutes >= 3 && t.reps >= 2, `bloc d'au moins 3 min : ${t.minutes}`);
+  }
+  const tw = DEMOS.find(d => /Twinkle/.test(d.title)), n15 = G.todayTasks(mkSong(tw, 15), NOW).length, n10 = G.todayTasks(mkSong(tw, 10), NOW).length;
+  assert.ok(n15 >= 3 && n15 <= 5, 'séance de 15 min : 3 à 5 blocs, pas ' + n15); assert.ok(n10 >= 3 && n10 <= 5 && n10 <= n15);
+  const gb = mkSong(tw, 15), sb = { goals: [gb], gp: {}, gt: {} }, tasks0 = G.todayTasks(gb, NOW);
+  assert.match(tasks0[0].info.label, /^Phrase \d+ · (main droite|main gauche|deux mains) · \d+ % · \d+ fois$/);
+  // liste figée : générée une fois, stable après plusieurs tentatives (le calendrier, lui, est replanifié)
+  assert.equal(G.ensureToday(sb, gb, NOW), true); assert.equal(G.ensureToday(sb, gb, NOW), false, 'pas de regénération le même jour');
+  const frozen = JSON.stringify(sb.gt.gb);
+  const us = gb.plan.analysis.sections.filter(s => !s.dupOf), s0 = us.find(s => s.id === tasks0[0].t.sectionId.split('+')[0]);
+  const att = (s, ts) => ({ songId: gb.songId, ts, mode: 'rhythm', hands: 'both', speed: 1, bpm: 100, notes: tw.notes.filter(n => n[1] >= s.startBeat - 1e-6 && n[1] < s.endBeat - 1e-6).map(([m, s_, d, h], i) => ({ i, m, s: s_, d, h, req: true, hit: true, wrong: 0, dt: 10 })) });
+  const t0 = tasks0[0].t, noon = Date.parse(NOW + 'T10:00:00');
+  const before = G.taskProgress(gb, sb.gp, t0, NOW); assert.equal(before.n, 0);
+  G.applyAttempt(sb, att(s0, noon), O); assert.deepEqual(G.taskProgress(gb, sb.gp, t0, NOW), { state: 'doing', n: 1, reps: t0.reps }, 'compteur +1 par tentative valide');
+  G.applyAttempt(sb, att(s0, noon + 1), O); assert.equal(G.taskProgress(gb, sb.gp, t0, NOW).state, 'done', '2 tentatives réussies valident l étape : bloc ✓');
+  assert.equal(JSON.stringify(sb.gt.gb), frozen, 'liste du jour inchangée après les tentatives');
+  assert.deepEqual(G.frozenTasks(sb, gb, NOW).map(x => x.t), tasks0.map(x => x.t));
+  // tentative insuffisante : le compteur n'avance pas
+  const sw = { goals: [gb], gp: {}, gt: {} }; G.ensureToday(sw, gb, NOW);
+  G.applyAttempt(sw, { ...att(s0, noon), notes: att(s0, noon).notes.map(n => ({ ...n, hit: false })) }, O);
+  assert.equal(G.taskProgress(gb, sw.gp, t0, NOW).n, 0);
+  // étape validée en cours de journée : bloc ✓ sans objet, toujours présent
+  const gm = { [gb.id]: { [s0.id]: [{ acc: 1, speed: 1, hands: 'both', ts: noon }, { acc: 1, speed: 1, hands: 'both', ts: noon + 1 }, { acc: 1, speed: 1, hands: 'both', ts: noon + 2 }] } };
+  assert.equal(G.taskProgress(gb, gm, t0, NOW).state, 'done');
+  // changement de jour : régénération
+  const next = add(NOW, 1); assert.equal(G.ensureToday(sb, gb, next), true); assert.equal(sb.gt.gb.date, next);
+  // réorganisation explicite
+  assert.equal(G.ensureToday(sb, gb, next, true), true);
+  // corruption : entrées invalides ignorées (=> regénérées), jamais d'exception
+  const good1 = { date: NOW, tasks: tasks0.map(x => x.t) };
+  for (const bad1 of [null, 3, 'x', [], { gb: 5 }, { gb: { date: 'hier', tasks: good1.tasks } }, { gb: { date: NOW, tasks: [] } }, { gb: { date: NOW, tasks: 'x' } },
+    { gb: { date: NOW, tasks: [{ ...good1.tasks[0], reps: 'a' }] } }, { gb: { date: NOW, tasks: [{ ...good1.tasks[0], speed: NaN }] } }, { gb: { date: NOW, tasks: [null] } }, { gb: { date: NOW, tasks: [{ ...good1.tasks[0], hands: 'Z' }] } }])
+    assert.deepEqual(G.fixGoalToday(bad1), {}, 'goalToday corrompu ignoré : ' + JSON.stringify(bad1)?.slice(0, 40));
+  assert.deepEqual(Object.keys(G.fixGoalToday({ gb: good1 })), ['gb']);
+  const stc = { goals: [gb], gp: {}, gt: { gb: { date: NOW, tasks: [{ ...good1.tasks[0], sectionId: 'inconnue' }] } } };
+  assert.equal(G.ensureToday(stc, gb, NOW), true, 'tâche sans phrase connue : regénération'); assert.equal(G.frozenTasks(stc, gb, NOW).length, tasks0.length);
+  const stor = { m: { 'sp.goals': [gb], 'sp.goalToday': { gb: good1, zombie: good1 } }, get(k, d) { return this.m[k] ?? d; }, set(k, v) { this.m[k] = JSON.parse(JSON.stringify(v)); return true; } };
+  const ld = G.load(stor); G.save(stor, ld); assert.ok(!('zombie' in stor.m['sp.goalToday']), 'liste d\'un objectif supprimé purgée');
+}
+console.log('test-goals : blocs OK');

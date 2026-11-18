@@ -3,6 +3,7 @@
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const r05 = x => Math.round(x * 2) / 2;
 const r2 = x => Math.round(x * 100) / 100;
+const BLOCK_MIN = 3; // un bloc de travail = au moins 3 min (reps × durée d'un passage + repos, cf. reps())
 const DAY = 864e5, MASTER = 0.95, INTERVALS = [1, 3, 7, 14], SPEEDS = [0.6, 0.8, 1];
 
 // --- dates (jours entiers, calendrier local ; 'YYYY-MM-DD' lu tel quel) ---
@@ -110,7 +111,7 @@ function stageList(sec, targetSpeed, skill, slow) {
   const add = (type, hands, speed, w, acc) => {
     const ff = { ...f, hands, handIndependence: hands === 'both' ? f.handIndependence : 0, difficulty: d };
     const factor = clamp(predict(skill, ff, speed).expectedAttempts / 3, .5, 4);
-    st.push({ type, hands, speed, acc, minutes: Math.max(1, r05(bars * (.35 + 1.4 * d) * w * factor * slow)) });
+    st.push({ type, hands, speed, acc, minutes: Math.max(BLOCK_MIN, r05(bars * (.35 + 1.4 * d) * w * factor * slow)) });
   };
   if (f.hands === 'both') { add('learn', 'R', .5, .9, .8); add('hands', 'L', .5, .8, .8); add('together', 'both', .5, 1.3, .8); }
   else add('learn', f.hands, .5, .9, .8);
@@ -238,7 +239,8 @@ function judge(an, o, sc) {
     f.message = ratio > 1
       ? `Soyons honnêtes : avec ${o.mpd} min par jour jusqu'au ${fr(o.dlN)}, il manque environ ${Math.round(req - availableMinutes)} min pour maîtriser ce morceau sans le bâcler. Mieux vaut le savoir maintenant que de survoler les passages difficiles.`
       : `Le temps total pourrait suffire, mais pas le nombre de séances : un apprentissage solide demande de répartir les passages difficiles sur plusieurs jours, et il n'y en a pas assez avant le ${fr(o.dlN)}.`;
-    const needMpd = Math.ceil(req * 1.15 / Math.max(1, sc.avail.length));
+    let needMpd = Math.ceil(req * 1.15 / Math.max(1, sc.avail.length));
+    while (needMpd < 600 && schedule(an, { ...o, mpd: needMpd }).leftover) needMpd++; // blocs de 3 min : la suggestion doit vraiment tenir
     // échéance suggérée : on repousse jusqu'à ce que le calendrier tienne avec ~15 % de marge
     let dl = o.dlN, found = null;
     for (let i = 0; i < 400 && found == null; i++) {
