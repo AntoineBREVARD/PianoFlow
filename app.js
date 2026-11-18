@@ -273,7 +273,7 @@ function startGame(song, warning, opts = {}) {
   let src = song.notes;
   if (o.from != null) { src = src.filter(n => n[1] >= o.from - 1e-6 && n[1] < o.to - 1e-6); if (!src.length) src = song.notes; }
   if (o.zones) { const z = src.filter(n => o.zones.some(([a, b]) => n[1] >= a - 1e-6 && n[1] < b - 1e-6)); if (z.length) src = z; } // hors zone : retirées (muettes, non requises) ; le départ saute à la 1re zone
-  const notes = src.map(([m, s, d, h, f]) => ({ m, s, d, h, f, hit: 0, miss: false, req: false }));
+  const notes = src.map(([m, s, d, h, f]) => ({ m, s, d, h, f, hit: 0, miss: false, req: false, dt: null, wrong: 0 }));
   notes.sort((a, b) => a.s - b.s || a.m - b.m);
   notes.forEach(n => { n.req = o.mode !== 'demo' && (o.hands === 'both' || o.hands === n.h); });
   if (!notes.some(n => n.req) && o.mode !== 'demo') notes.forEach(n => { n.req = true; });
@@ -285,7 +285,7 @@ function startGame(song, warning, opts = {}) {
   G = {
     song, notes, req, lo, hi, mode: o.mode, sp: o.speed, opts: o, secs: 0,
     t: notes[0].s - 3, gi: 0, mi: 0, ai: 0, end: notes.reduce((a, n) => Math.max(a, n.s + n.d), 0),
-    maxD: notes.reduce((a, n) => Math.max(a, n.d), 0), total: req.length, hits: 0, wrong: 0, missed: 0, streak: 0, best: 0, parts: [], rings: [], bad: null, pop: 0, hud: ['', ''], paused: false, last: performance.now(), beat: Math.floor(notes[0].s - 3) - 1, lastAct: performance.now(), flash: null, mic: settings.input === 'mic',
+    maxD: notes.reduce((a, n) => Math.max(a, n.d), 0), total: req.length, hits: 0, wrong: 0, pw: 0, wl: [], missed: 0, streak: 0, best: 0, parts: [], rings: [], bad: null, pop: 0, hud: ['', ''], paused: false, last: performance.now(), beat: Math.floor(notes[0].s - 3) - 1, lastAct: performance.now(), flash: null, mic: settings.input === 'mic',
   };
   startAccomp(notes, song); startRec();
   $('#home').hidden = true; $('#result').hidden = true; $('#game').hidden = false;
@@ -369,7 +369,7 @@ function update(dt) {
   if (G.mode === 'wait') {
     while (G.gi < G.req.length && G.req[G.gi].hit) G.gi++;
     const gate = G.req[G.gi];
-    if (gate && prev + adv > gate.s) adv = Math.max(0, gate.s - prev);
+    if (gate && prev + adv >= gate.s) { adv = Math.max(0, gate.s - prev); if (gate.arr == null) gate.arr = performance.now(); }
   }
   G.t = prev + adv;
   if (G.mode === 'rhythm') {
@@ -404,10 +404,17 @@ function finish() {
   const score = Math.max(0, g.hits - g.wrong * 0.5) / Math.max(1, g.total);
   const stars = score >= 0.95 ? 3 : score >= 0.8 ? 2 : score >= 0.5 ? 1 : 0;
   learn.onTime(g.secs);
+  const attempt = {
+    songId: g.song.id || g.song.title, ts: Date.now(), mode: g.mode, hands: g.opts.hands || settings.hands, speed: g.sp, bpm: Math.round(g.song.bpm * g.sp), secs: g.secs,
+    notes: g.notes.map((n, i) => ({ i, m: n.m, s: n.s, d: n.d, h: n.h, f: n.f, req: n.req, hit: !!n.hit, wrong: n.wrong, dt: n.hit ? n.dt : null })),
+    wrongs: g.wl,
+  };
+  if (g.opts.work) { attempt.zone = true; attempt.measures = [...new Set(g.req.map(n => Math.floor(n.s / 4) + 1))].sort((a, b) => a - b); }
+  try { if (typeof learn.recordAttempt === 'function') learn.recordAttempt(attempt); } catch (e) { console.warn(e); }
   if (g.opts.work) return workDone(g);
   // mesures (4 temps) contenant au moins une note requise non jouée
   const weak = [...new Set(g.req.filter(n => !n.hit).map(n => Math.floor(n.s / 4) + 1))].sort((a, b) => a - b);
-  const next = g.opts.onDone?.({ stars, score, hits: g.hits, total: g.total, wrong: g.wrong, secs: g.secs, weak });
+  const next = g.opts.onDone?.({ stars, score, hits: g.hits, total: g.total, wrong: g.wrong, secs: g.secs, weak, attempt });
   $('#next').hidden = !next?.run; $('#hint').textContent = next?.hint || '';
   if (next?.run) { $('#next').textContent = next.label; $('#next').onclick = () => { $('#result').hidden = true; $('#home').hidden = false; learn.refresh(); next.run(); }; }
   $('#stars').textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
@@ -415,6 +422,7 @@ function finish() {
   const acc = Math.round(g.hits / Math.max(1, g.total + g.wrong) * 100);
   $('#resStats').textContent = `Précision ${acc} % · ${g.hits} justes · ${g.total - g.hits} ratées · ${g.wrong} fausses · meilleur enchaînement ${g.best}`;
   $('#resWeak').textContent = weak.length ? 'Mesures à retravailler : ' + weak.slice(0, 8).join(', ') : 'Aucune mesure à retravailler, bravo !';
+  stuck(attempt);
   $('#result').hidden = false; showRec();
   $('#again').onclick = () => { $('#result').hidden = true; begin(g.song, g.opts); };
   $('#toMenu').onclick = () => { $('#result').hidden = true; $('#home').hidden = false; learn.refresh(); };
@@ -424,6 +432,20 @@ function finish() {
     const base = g.opts, orig = base.speed ?? settings.speed;
     runWork(g.song, { zones: weak.map(k => [(k - 2) * 4, (k + 1) * 4]), orig, sp: Math.max(0.5 * orig, 0.8 * orig), ok: 0, base });
   };
+}
+
+// « Ce qui a coincé » : diagnostics facultatifs (skill.js absent ou en erreur : rien)
+async function stuck(attempt) {
+  const box = $('#resStuck'); box.hidden = true; box.textContent = '';
+  try {
+    const { diagnoseAttempt } = await import('./skill.js');
+    const list = diagnoseAttempt(attempt).sort((a, b) => b.severity - a.severity).slice(0, 3);
+    if (!list.length) return;
+    const h = document.createElement('strong'); h.textContent = 'Ce qui a coincé'; box.append(h);
+    const ul = document.createElement('ul');
+    for (const d of list) { const li = document.createElement('li'); li.textContent = d.message + (d.measures?.length && !/mesure/.test(d.message) ? ' (mesure' + (d.measures.length > 1 ? 's ' : ' ') + d.measures.join(', ') + ')' : ''); ul.append(li); }
+    box.append(ul); box.hidden = false;
+  } catch (e) { /* rien */ }
 }
 
 /* ----- « Répète le passage » : boucle sur les mesures ratées (± 1 mesure), sans XP ni onDone ----- */
@@ -483,7 +505,9 @@ function judge(m, lat = 0) {
   }
   const r = G.keys.get(m), now = performance.now();
   if (cand) {
-    cand.hit = 1; G.lastAct = now; G.hits++; G.streak++; G.best = Math.max(G.best, G.streak);
+    cand.hit = 1; cand.wrong = G.pw; G.pw = 0;
+    cand.dt = Math.round(G.mode === 'wait' ? (cand.arr != null ? now - cand.arr : (t - cand.s) * 60000 / (G.song.bpm * G.sp)) : (t - cand.s) * 60000 / (bpmAt(cand.s) * G.sp));
+    G.lastAct = now; G.hits++; G.streak++; G.best = Math.max(G.best, G.streak);
     if (r && !RM) {
       const x = r.x + r.w / 2, y = G.hitY;
       G.rings.push({ x, y, t: now });
@@ -495,7 +519,7 @@ function judge(m, lat = 0) {
     }
     if (G.streak % 5 === 0) G.pop = now;
   } else {
-    G.wrong++; G.streak = 0; G.lastAct = now;
+    G.wrong++; G.pw++; G.wl.push({ m, s: +t.toFixed(3) }); G.streak = 0; G.lastAct = now;
     G.bad = { m, t: now };
   }
 }

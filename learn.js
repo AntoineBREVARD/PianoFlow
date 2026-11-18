@@ -2,6 +2,9 @@
 import { LEVELS, ALL } from './curriculum.js';
 import { QUESTIONS, placementLevel } from './placement.js';
 import { esc, fixPlan, fixProfile } from './stats.js';
+import * as SK from './skill.js';
+import * as G from './goals.js';
+import { DEMOS } from './songs.js';
 
 const $ = s => document.querySelector(s);
 let planAsked = false, freezeUsed = false, wk = null, H = null, progress = {}, plan = null, days = {}, guidedP = {};
@@ -23,12 +26,47 @@ export function init(host) {
   document.querySelectorAll('#tabs button[data-tab]').forEach(b => b.onclick = () => tab(b.dataset.tab));
   $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
   tab(H.store.get('sp.tab', 'today'));
+  const ul = $('#songs'); if (ul) { decorateSongs(); new MutationObserver(decorateSongs).observe(ul, { childList: true }); }
 }
 export function refresh() { renderToday(); renderCourse(); }
 export function onTime(secs) {
   if (!(secs > 0)) return;
   const d = (days[dkey()] ||= { sec: 0, done: [] }); if (!Array.isArray(d.done)) d.done = []; if (!(d.sec >= 0)) d.sec = 0; d.sec += secs;
   H.store.set('sp.days', days); wkGet().sec += secs; H.store.set('sp.week', wk);
+}
+
+/* ---------- tentatives : niveau du joueur + programmes personnalisés ---------- */
+const seenAttempts = new WeakMap(); // tentative -> résultat (finish() l'enregistre avant onDone, qui relit le résultat)
+export function recordAttempt(attempt) {
+  if (!H || !attempt || typeof attempt !== 'object' || attempt.mode === 'demo') return null;
+  if (seenAttempts.has(attempt)) return seenAttempts.get(attempt);
+  seenAttempts.set(attempt, null);
+  let prof = G.loadSkill(H.store);
+  try { prof = G.recordSkill(prof, attempt); H.store.set('sp.skill', prof); } catch (e) { console.warn(e); }
+  try {
+    const st = G.load(H.store), res = G.applyAttempt(st, attempt, { now: G.todayStr(), profile: prof });
+    if (res.length) G.save(H.store, st);
+    seenAttempts.set(attempt, res);
+    return res;
+  } catch (e) { console.warn(e); return null; }
+}
+const allSongs = () => { const lib = H.store.get('sp.library', []); return [...(Array.isArray(lib) ? lib.filter(s => s && Array.isArray(s.notes) && s.title) : []), ...DEMOS]; };
+const findSong = id => allSongs().find(s => G.songIdOf(s) === id);
+function decorateSongs() { // bouton « 🎯 Objectif » sur chaque morceau de « Mes morceaux » (la liste est construite par app.js)
+  const lis = [...document.querySelectorAll('#songs > li')]; if (!lis.length) return;
+  let list; try { list = allSongs(); } catch { return; }
+  lis.forEach((li, i) => {
+    if (li.querySelector('.goalBtn')) return;
+    const title = li.querySelector('b')?.textContent, song = list[i]?.title === title ? list[i] : list.find(s => s.title === title);
+    if (!song) return;
+    const b = document.createElement('button'); b.className = 'ghost goalBtn'; b.textContent = '🎯 Objectif'; b.title = 'Programme personnalisé pour apprendre ce morceau';
+    b.onclick = () => G.openGoalModal({ song, store: H.store, modal, closeModal, onSaved: () => { tab('today'); } });
+    const play = li.querySelector('.primary'); play ? play.after(b) : li.append(b);
+  });
+}
+function goalsBox(el) {
+  const box = document.createElement('div'); box.id = 'goalsBox'; el.append(box);
+  G.mountToday(box, { store: H.store, begin: H.begin, record: recordAttempt, refresh, findSong });
 }
 
 /* ---------- helpers ---------- */
@@ -147,6 +185,7 @@ function renderToday() {
       <ul class="perks"><li>${ALL.length} leçons progressives, du premier Do aux morceaux à deux mains</li><li>Importe tes partitions (MIDI, MusicXML) et apprends-les main par main</li><li>Gratuit et hors ligne, sur téléphone, tablette ou avec ton piano USB</li></ul>
       <p class="hint">🪑 Assieds-toi dos droit, épaules relâchées, poignets souples, doigts arrondis comme si tu tenais une balle. Si ta main serre, fais une pause.</p>
       <button id="skip" class="ghost">J\'ai déjà des bases</button></section>`;
+    goalsBox(el);
     el.querySelector('#cta').onclick = () => ALL.some(done) ? planEditor(true) : startLesson(l, true);
     el.querySelector('#skip').onclick = () => planEditor(true);
     return;
@@ -168,8 +207,9 @@ function renderToday() {
   const pf = profile(); if (grant(pf).length) H.store.set('sp.profile', pf);
   const nb = Object.keys(pf.badges).length;
   el.innerHTML = hero + `
-    <section class="card"><div class="status"><b>Niveau ${levelOf(pf.xp)}</b><span>${+pf.xp || 0} XP</span><button id="bdg" class="ghost">🏅 ${nb}/${Object.keys(BADGES).length} badges</button><button id="stt" class="ghost">📈 Ma progression</button></div>
+    <section class="card"><div class="status"><b>Niveau ${levelOf(pf.xp)}</b><span>${+pf.xp || 0} XP</span><button id="bdg" class="ghost">🏅 ${nb}/${Object.keys(BADGES).length} badges</button><button id="stt" class="ghost">📈 Ma progression</button><button id="lvl" class="ghost">🧠 Mon niveau</button></div>
       <div class="progress"><div style="width:${(pf.xp - 50 * (levelOf(pf.xp) - 1) ** 2) / (50 * (2 * levelOf(pf.xp) - 1)) * 100}%"></div></div></section>
+    <div id="goalsHere"></div>
     <section class="card">
       <div class="streak"><div class="big-n">🔥 ${sn}</div><div>${sn > 1 ? 'jours de suite' : sn === 1 ? 'jour validé' : 'Commence ta série aujourd\'hui !'}<br><small>Cette semaine : ${wk.ok}/${wk.goal} séances · ${freezeUsed ? '🧊 gel utilisé' : '🧊 gel disponible'}</small></div></div>
       <div class="dots">${wk.html}</div>
@@ -204,6 +244,12 @@ function renderToday() {
     $('#mOk').onclick = closeModal;
     import('./stats.js').then(m => m.mount(b.querySelector('#statsBox'), H.store)).catch(() => { b.querySelector('#statsBox').textContent = 'Page indisponible.'; });
   };
+  el.querySelector('#lvl').onclick = () => {
+    const b = modal('<div id="lvlBox"></div><div class="actions"><button class="primary" id="mOk">Fermer</button></div>');
+    $('#mOk').onclick = closeModal;
+    import('./mylevel.js').then(m => { if (typeof m.mount !== 'function') throw 0; m.mount(b.querySelector('#lvlBox'), H.store, { skill: SK, start: (song, o) => { closeModal(); H.begin(song, { hands: 'both', label: song.title, ...o }); } }); }).catch(() => { b.querySelector('#lvlBox').textContent = '🧠 Bientôt disponible.'; });
+  };
+  try { const gh = el.querySelector('#goalsHere'), tmp = document.createElement('div'); goalsBox(tmp); gh.replaceWith(...tmp.childNodes); } catch (e) { console.warn(e); }
   el.querySelector('#editPlan').onclick = () => planEditor(false);
   const cta = el.querySelector('#cta'); if (cta) cta.onclick = () => startLesson(nxt, true);
 }
