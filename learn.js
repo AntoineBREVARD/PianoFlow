@@ -36,15 +36,17 @@ export function onTime(secs) {
 }
 
 /* ---------- tentatives : niveau du joueur + programmes personnalisés ---------- */
-const seenAttempts = new WeakSet();
+const seenAttempts = new WeakMap(); // tentative -> résultat (finish() l'enregistre avant onDone, qui relit le résultat)
 export function recordAttempt(attempt) {
-  if (!H || !attempt || typeof attempt !== 'object' || attempt.mode === 'demo' || seenAttempts.has(attempt)) return null;
-  seenAttempts.add(attempt);
+  if (!H || !attempt || typeof attempt !== 'object' || attempt.mode === 'demo') return null;
+  if (seenAttempts.has(attempt)) return seenAttempts.get(attempt);
+  seenAttempts.set(attempt, null);
   let prof = G.loadSkill(H.store);
   try { prof = G.recordSkill(prof, attempt); H.store.set('sp.skill', prof); } catch (e) { console.warn(e); }
   try {
     const st = G.load(H.store), res = G.applyAttempt(st, attempt, { now: G.todayStr(), profile: prof });
     if (res.length) G.save(H.store, st);
+    seenAttempts.set(attempt, res);
     return res;
   } catch (e) { console.warn(e); return null; }
 }
@@ -245,7 +247,7 @@ function renderToday() {
   el.querySelector('#lvl').onclick = () => {
     const b = modal('<div id="lvlBox"></div><div class="actions"><button class="primary" id="mOk">Fermer</button></div>');
     $('#mOk').onclick = closeModal;
-    import('./mylevel.js').then(m => { if (typeof m.mount !== 'function') throw 0; m.mount(b.querySelector('#lvlBox'), H.store, { skill: SK }); }).catch(() => { b.querySelector('#lvlBox').textContent = '🧠 Bientôt disponible.'; });
+    import('./mylevel.js').then(m => { if (typeof m.mount !== 'function') throw 0; m.mount(b.querySelector('#lvlBox'), H.store, { skill: SK, start: (song, o) => { closeModal(); H.begin(song, { hands: 'both', label: song.title, ...o }); } }); }).catch(() => { b.querySelector('#lvlBox').textContent = '🧠 Bientôt disponible.'; });
   };
   try { const gh = el.querySelector('#goalsHere'), tmp = document.createElement('div'); goalsBox(tmp); gh.replaceWith(...tmp.childNodes); } catch (e) { console.warn(e); }
   el.querySelector('#editPlan').onclick = () => planEditor(false);
