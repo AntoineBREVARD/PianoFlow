@@ -285,7 +285,7 @@ function startGame(song, warning, opts = {}) {
   G = {
     song, notes, req, lo, hi, mode: o.mode, sp: o.speed, opts: o, secs: 0,
     t: notes[0].s - 3, gi: 0, mi: 0, ai: 0, end: notes.reduce((a, n) => Math.max(a, n.s + n.d), 0),
-    maxD: notes.reduce((a, n) => Math.max(a, n.d), 0), total: req.length, hits: 0, wrong: 0, pw: 0, wl: [], missed: 0, streak: 0, best: 0, parts: [], rings: [], bad: null, pop: 0, hud: ['', ''], paused: false, last: performance.now(), beat: Math.floor(notes[0].s - 3) - 1, lastAct: performance.now(), flash: null, mic: settings.input === 'mic',
+    maxD: notes.reduce((a, n) => Math.max(a, n.d), 0), total: req.length, hits: 0, wrong: 0, pw: 0, wl: [], missed: 0, streak: 0, best: 0, parts: [], rings: [], bad: null, pop: 0, hud: ['', ''], paused: false, last: performance.now(), beat: Math.floor(notes[0].s - 3) - 1, lastAct: performance.now(), flash: null, mic: settings.input === 'mic', kl: new Float64Array(128).fill(-1e9), kh: new Array(128).fill(null), tier: 0, tierT: 0, missT: 0, missFx: null, pT: 0, pm: 1,
   };
   startAccomp(notes, song); startRec();
   $('#home').hidden = true; $('#result').hidden = true; $('#game').hidden = false;
@@ -379,7 +379,7 @@ function update(dt) {
     for (; G.mi < G.req.length; G.mi++) {
       const n = G.req[G.mi];
       if (n.hit || n.miss) continue;
-      if (n.s < G.t - 0.4) { n.miss = true; G.missed++; G.streak = 0; } else break;
+      if (n.s < G.t - 0.4) { n.miss = true; G.missed++; G.streak = 0; G.missT = performance.now(); G.missFx = { m: n.m, t: G.missT }; flash('Raté', '#f87171', 600); } else break;
     }
   }
   if (G.acc && !G.paused) G.acc.tick(G.t, bps());
@@ -417,7 +417,7 @@ function finish() {
   const next = g.opts.onDone?.({ stars, score, hits: g.hits, total: g.total, wrong: g.wrong, secs: g.secs, weak, attempt });
   $('#next').hidden = !next?.run; $('#hint').textContent = next?.hint || '';
   if (next?.run) { $('#next').textContent = next.label; $('#next').onclick = () => { $('#result').hidden = true; $('#home').hidden = false; learn.refresh(); next.run(); }; }
-  $('#stars').textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
+  revealStars(stars);
   $('#resTitle').textContent = g.opts.label || g.song.title;
   const acc = Math.round(g.hits / Math.max(1, g.total + g.wrong) * 100);
   $('#resStats').textContent = `Précision ${acc} % · ${g.hits} justes · ${g.total - g.hits} ratées · ${g.wrong} fausses · meilleur enchaînement ${g.best}`;
@@ -432,6 +432,18 @@ function finish() {
     const base = g.opts, orig = base.speed ?? settings.speed;
     runWork(g.song, { zones: weak.map(k => [(k - 2) * 4, (k + 1) * 4]), orig, sp: Math.max(0.5 * orig, 0.8 * orig), ok: 0, base });
   };
+}
+
+// étoiles qui apparaissent une à une (sans animation si prefers-reduced-motion)
+let starTok = 0;
+function revealStars(stars) {
+  const el = $('#stars'), tok = ++starTok, all = n => '★'.repeat(n) + '☆'.repeat(3 - n);
+  if (RM || !stars) { el.textContent = all(stars); return; }
+  el.textContent = all(0);
+  for (let i = 1; i <= stars; i++) setTimeout(() => {
+    if (tok !== starTok || $('#result').hidden) return;
+    el.textContent = all(i); el.animate?.([{ transform: 'scale(1.7)', opacity: 0.4 }, { transform: 'scale(1)', opacity: 1 }], { duration: 380, easing: 'cubic-bezier(.2,1.6,.4,1)' });
+  }, 350 * i);
 }
 
 // « Ce qui a coincé » : diagnostics facultatifs (skill.js absent ou en erreur : rien)
@@ -510,17 +522,17 @@ function judge(m, lat = 0) {
     G.lastAct = now; G.hits++; G.streak++; G.best = Math.max(G.best, G.streak);
     if (r && !RM) {
       const x = r.x + r.w / 2, y = G.hitY;
-      G.rings.push({ x, y, t: now });
-      for (let i = 0; i < 14 && G.parts.length < 120; i++) { // plafond 120 particules, objets recyclés
+      const hc = HAND[cand.h] || HAND.R; G.rings.push({ x, y, t: now, c: hc.b });
+      for (let i = 0; i < 18 && G.parts.length < 120; i++) { // plafond 120 particules, objets recyclés
         const a = Math.PI * (1 + Math.random()), v = 60 + Math.random() * 140, p = partPool.pop() || {};
-        p.x = x; p.y = y; p.vx = Math.cos(a) * v; p.vy = Math.sin(a) * v; p.t = now; p.c = i % 2 ? '#34d399' : '#fde68a';
+        p.x = x; p.y = y; p.vx = Math.cos(a) * v; p.vy = Math.sin(a) * v; p.t = now; p.c = i % 2 ? hc.b : '#fde68a';
         G.parts.push(p);
       }
     }
     if (G.streak % 5 === 0) G.pop = now;
   } else {
     G.wrong++; G.pw++; G.wl.push({ m, s: +t.toFixed(3) }); G.streak = 0; G.lastAct = now;
-    G.bad = { m, t: now };
+    G.bad = { m, t: now }; flash('Oups', '#f87171', 500);
   }
 }
 
@@ -570,26 +582,86 @@ function resize() {
 addEventListener('resize', resize);
 
 const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); };
-const COL = { R: ['#38bdf8', '#0ea5e9'], L: ['#fb923c', '#ea580c'] };
+// palette par main : b = base, l = reflet, d = ombre
+const HAND = { R: { b: '#38bdf8', l: '#e0f7ff' }, L: { b: '#fb923c', l: '#ffedd5' } };
+const HITC = { b: '#34d399', l: '#d1fae5' }, MISSC = { b: '#64748b', l: '#cbd5e1' }, GHOSTC = { b: '#94a3b8', l: '#e2e8f0' };
+const FING = ['#fff', '#f87171', '#fbbf24', '#a3e635', '#22d3ee', '#c084fc'];
+const COMBOC = ['#e2e8f0', '#fde68a', '#fbbf24', '#fb923c'];
+const ease = k => 1 - (1 - k) * (1 - k);
 
-let bgG = null, bgH = -1;
+/* sprites pré-rendus (mis en cache) : halo radial, traînée verticale */
+const sprites = {};
+function glowSpr(c) {
+  return sprites['g' + c] || (sprites['g' + c] = (() => {
+    const s = document.createElement('canvas'); s.width = s.height = 64; const g = s.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, c + 'ff'); gr.addColorStop(0.35, c + '66'); gr.addColorStop(1, c + '00'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return s;
+  })());
+}
+function fadeSpr(c, up) { // dégradé vertical : transparent en haut -> couleur en bas (up) ou l'inverse
+  const k = (up ? 'u' : 'd') + c;
+  return sprites[k] || (sprites[k] = (() => {
+    const s = document.createElement('canvas'); s.width = 4; s.height = 64; const g = s.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 64);
+    gr.addColorStop(0, c + (up ? '00' : 'cc')); gr.addColorStop(1, c + (up ? 'cc' : '00')); g.fillStyle = gr; g.fillRect(0, 0, 4, 64); return s;
+  })());
+}
+const DUST = new Float32Array(40 * 4); for (let i = 0; i < 40; i++) { DUST[i * 4] = Math.random(); DUST[i * 4 + 1] = Math.random(); DUST[i * 4 + 2] = 0.2 + Math.random() * 0.8; DUST[i * 4 + 3] = Math.random() * 6.28; }
+
+let bgc = null, bgKey = '', gBase = '', kbW, kbB, kbShadow, beatBand;
+const hintSet = new Set();
+function layers() {
+  const { W, H, hitY } = G, key = `${W}x${H}|${hitY}|${dpr}|${G.lo}-${G.hi}`;
+  if (key === bgKey) return; bgKey = key;
+  // fond + lignes de touches pré-rendus une fois
+  bgc = bgc || document.createElement('canvas'); bgc.width = Math.ceil(W * dpr); bgc.height = Math.ceil(hitY * dpr);
+  const g = bgc.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  let gr = g.createLinearGradient(0, 0, 0, hitY); gr.addColorStop(0, '#080a1c'); gr.addColorStop(1, '#171b3d'); g.fillStyle = gr; g.fillRect(0, 0, W, hitY);
+  gr = g.createRadialGradient(W * 0.2, hitY * 0.3, 0, W * 0.2, hitY * 0.3, W * 0.8); gr.addColorStop(0, 'rgba(99,102,241,.18)'); gr.addColorStop(1, 'rgba(99,102,241,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, hitY);
+  gr = g.createRadialGradient(W * 0.85, hitY * 0.65, 0, W * 0.85, hitY * 0.65, W * 0.7); gr.addColorStop(0, 'rgba(14,165,233,.14)'); gr.addColorStop(1, 'rgba(14,165,233,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, hitY);
+  g.fillStyle = 'rgba(0,0,0,.11)'; for (const m of G.blacks) { const r = G.keys.get(m); g.fillRect(r.x, 0, r.w, hitY); }
+  g.lineWidth = 1;
+  for (const m of G.whites) { const r = G.keys.get(m); g.strokeStyle = m % 12 === 0 ? 'rgba(255,255,255,.2)' : 'rgba(255,255,255,.06)'; g.beginPath(); g.moveTo(r.x, 0); g.lineTo(r.x, hitY); g.stroke(); }
+  gr = g.createLinearGradient(0, 0, 0, 90); gr.addColorStop(0, 'rgba(8,10,28,.7)'); gr.addColorStop(1, 'rgba(8,10,28,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, 90);
+  // dégradés du clavier et de la ligne d'impact (coordonnées absolues, partagés par toutes les touches)
+  const kb = G.kbH, bk = G.bkH;
+  kbW = ctx.createLinearGradient(0, hitY, 0, H); kbW.addColorStop(0, '#ffffff'); kbW.addColorStop(0.85, '#e2e5f1'); kbW.addColorStop(1, '#b8bdd6');
+
+  kbB = ctx.createLinearGradient(0, hitY, 0, hitY + bk); kbB.addColorStop(0, '#454556'); kbB.addColorStop(0.7, '#1b1b25'); kbB.addColorStop(1, '#0c0c12');
+  kbShadow = ctx.createLinearGradient(0, hitY, 0, hitY + 12); kbShadow.addColorStop(0, 'rgba(0,0,0,.55)'); kbShadow.addColorStop(1, 'rgba(0,0,0,0)');
+  beatBand = ctx.createLinearGradient(0, hitY - 36, 0, hitY); beatBand.addColorStop(0, 'rgba(56,189,248,0)'); beatBand.addColorStop(1, 'rgba(125,211,252,.55)');
+}
+
 function draw() {
   const { W, H, hitY, ppb } = G, now = performance.now();
-  const bad = G.bad && now - G.bad.t < 350 ? G.bad : null, shk = bad && !RM ? Math.sin(now * 0.12) * 3 * (1 - (now - bad.t) / 350) : 0;
+  layers();
+  const bt = Math.max(G.bad ? G.bad.t : 0, G.missT), bad = G.bad && now - G.bad.t < 350 ? G.bad : null;
+  const shk = !RM && now - bt < 350 ? Math.sin(now * 0.12) * 3 * (1 - (now - bt) / 350) : 0;
   ctx.setTransform(dpr, 0, 0, dpr, shk * dpr, 0);
-  if (bgH !== hitY) { bgH = hitY; bgG = ctx.createLinearGradient(0, 0, 0, hitY); bgG.addColorStop(0, '#0b0e22'); bgG.addColorStop(1, '#171b3d'); }
-  ctx.fillStyle = bgG; ctx.fillRect(0, 0, W, H);
-  // lignes de touches
-  ctx.lineWidth = 1;
-  for (const m of G.whites) {
-    const r = G.keys.get(m); ctx.strokeStyle = m % 12 === 0 ? 'rgba(255,255,255,.18)' : 'rgba(255,255,255,.06)';
-    ctx.beginPath(); ctx.moveTo(r.x, 0); ctx.lineTo(r.x, hitY); ctx.stroke();
+  ctx.fillStyle = '#080a1c'; ctx.fillRect(-6, 0, W + 12, H);
+  ctx.drawImage(bgc, 0, 0, W, hitY);
+  // pulsation sur le tempo (se fige quand le jeu attend la bonne touche)
+  const mv = G.t !== G.pT; G.pT = G.t; G.pm += ((mv ? 1 : 0) - G.pm) * 0.08;
+  const ph = G.t - Math.floor(G.t), pulse = RM ? 0.25 : 0.2 + (1 - ph) ** 3 * 0.8 * G.pm;
+  ctx.globalAlpha = 0.12 + pulse * 0.2; ctx.drawImage(glowSpr('#38bdf8'), -W * 0.2, hitY - 180, W * 1.4, 360); ctx.globalAlpha = 1;
+  // poussière d'étoiles (parallaxe)
+  ctx.fillStyle = '#c7d2fe';
+  for (let i = 0; i < 40; i++) {
+    const d = DUST[i * 4 + 2], p = DUST[i * 4 + 3], y = ((DUST[i * 4 + 1] + (RM ? 0 : now * 0.00002 * d)) % 1) * hitY, x = DUST[i * 4] * W + (RM ? 0 : Math.sin(now * 0.0004 + p) * 6 * d), s = 1 + d * 1.6;
+    ctx.globalAlpha = (0.12 + 0.3 * d) * (RM ? 1 : 0.65 + 0.35 * Math.sin(now * 0.002 + p)); ctx.fillRect(x, y, s, s);
+  }
+  // lignes de temps (défilent avec les notes), plus marquées à chaque mesure
+  ctx.globalAlpha = 1; ctx.lineWidth = 1;
+  const k0 = Math.floor(G.t);
+  for (let pass = 0; pass < 2; pass++) {
+    ctx.strokeStyle = pass ? 'rgba(165,180,252,.2)' : 'rgba(165,180,252,.07)'; ctx.beginPath();
+    for (let k = k0, y; (y = hitY - (k - G.t) * ppb) > 0; k++) if (y < hitY && (k % 4 === 0) === !!pass) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
   }
   // notes qui tombent
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, hitY); ctx.clip();
-  const hint = new Set(!settings.recall || now - G.lastAct > 3000 || G.bad && now - G.bad.t < 3000 ? expectedNow().map(n => n.m) : []);
+  hintSet.clear();
+  if (!settings.recall || now - G.lastAct > 3000 || G.bad && now - G.bad.t < 3000) for (const n of expectedNow()) hintSet.add(n.m);
   // fenêtre visible : notes triées par début ; départ par dichotomie (s >= t - maxD), arrêt dès qu'une note est au-dessus de l'écran
-  const NS = G.notes, tMax = G.t + (hitY + 4) / ppb;
+  const NS = G.notes, tMax = G.t + (hitY + 4) / ppb, demo = G.mode === 'demo';
   let a = 0, b = NS.length; for (const lim = G.t - G.maxD; a < b;) { const mid = (a + b) >> 1; if (NS[mid].s < lim) a = mid + 1; else b = mid; }
   for (let i = a; i < NS.length; i++) {
     const n = NS[i]; if (n.s > tMax) break;
@@ -598,79 +670,125 @@ function draw() {
     const r = G.keys.get(n.m); if (!r) continue;
     const bh = Math.max(yb - yt - 8, 20), top = yb - bh;
     const bw = isBlack(n.m) ? r.w * 0.9 : r.w * 0.84, bx = r.x + (r.w - bw) / 2;
-    let c = COL[n.h] || COL.R;
-    let fill = c[0];
-    if (n.hit) fill = '#34d399'; else if (n.miss) fill = '#64748b'; else if (!n.req) fill = 'rgba(148,163,184,.45)';
-    ctx.globalAlpha = n.hit && G.mode !== 'demo' ? Math.max(0.25, 1 - (G.t - n.s) * 1.5) : settings.recall && !n.hit && G.mode !== 'demo' ? 0.15 : 1;
-    ctx.fillStyle = fill; rr(bx, top, bw, bh - 2, 6); ctx.fill();
+    const P = n.hit ? HITC : n.miss ? MISSC : !n.req ? GHOSTC : (HAND[n.h] || HAND.R), live = n.req && !n.hit && !n.miss;
+    if (n.s <= G.t && G.t < n.s + n.d && (!n.req || demo || n.hit)) { G.kl[n.m] = now; G.kh[n.m] = n.h; } // touche allumée pendant la note
+    const al = n.hit && !demo ? Math.max(0.25, 1 - (G.t - n.s) * 1.5) : settings.recall && !n.hit && !demo ? 0.15 : 1;
+    ctx.globalAlpha = al * (n.req || demo ? 1 : 0.5);
+    if (live) { // traînée de mouvement + halo
+      ctx.globalAlpha = al * 0.35; ctx.drawImage(fadeSpr(P.b, true), bx + bw * 0.2, top - 54, bw * 0.6, 54);
+      ctx.globalAlpha = al * 0.4; ctx.drawImage(glowSpr(P.b), bx - bw * 0.35, top - 14, bw * 1.7, bh + 28);
+      ctx.globalAlpha = al;
+    }
+    ctx.fillStyle = P.b; rr(bx, top, bw, bh - 2, Math.min(8, bw / 2)); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.3)'; rr(bx + 2, top + 2, bw - 4, Math.min(bh * 0.4, 16), Math.min(6, bw / 2)); ctx.fill(); // reflet
+    ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(bx + bw * 0.12, yb - 12, bw * 0.76, 3); // ombre du bas
+    if (bh > 44) { ctx.fillStyle = P.l; ctx.globalAlpha = al * 0.28; rr(bx + bw * 0.3, top + 22, bw * 0.4, bh - 46, bw * 0.2); ctx.fill(); ctx.globalAlpha = al * (n.req || demo ? 1 : 0.5); } // corps lumineux des notes longues
+    ctx.strokeStyle = P.l; ctx.lineWidth = 1.5; ctx.globalAlpha *= 0.7; rr(bx + 0.75, top + 0.75, bw - 1.5, bh - 3.5, Math.min(8, bw / 2)); ctx.stroke();
     ctx.globalAlpha = 1;
     if (n.f && bh >= 20 && bw > 14) {
-      ctx.fillStyle = 'rgba(255,255,255,.92)'; ctx.beginPath(); ctx.arc(bx + bw / 2, top + 12, 9, 0, 7); ctx.fill();
-      ctx.fillStyle = '#0b0e22'; ctx.font = '700 12px system-ui'; ctx.textAlign = 'center'; ctx.fillText(n.f, bx + bw / 2, top + 16.5);
+      const fx = bx + bw / 2, fy = top + 13;
+      ctx.fillStyle = FING[n.f] || '#fff'; ctx.beginPath(); ctx.arc(fx, fy, 10, 0, 7); ctx.fill();
+      ctx.fillStyle = '#0b0e22'; ctx.font = '800 12px system-ui'; ctx.textAlign = 'center'; ctx.fillText(n.f, fx, fy + 4.5);
     }
-    if (settings.names && bw > 16 && bh > (n.f ? 44 : 18)) {
-      ctx.fillStyle = 'rgba(0,0,0,.75)'; ctx.font = `600 ${Math.min(13, bw * 0.5)}px system-ui`; ctx.textAlign = 'center';
-      ctx.fillText(NAMES[n.m % 12], bx + bw / 2, yb - 8);
+    if (settings.names && bw > 16 && bh > (n.f ? 46 : 18)) {
+      ctx.fillStyle = 'rgba(0,0,0,.72)'; ctx.font = `700 ${Math.min(13, bw * 0.5) | 0}px system-ui`; ctx.textAlign = 'center';
+      ctx.fillText(NAMES[n.m % 12], bx + bw / 2, yb - 16);
     }
   }
   ctx.restore();
+  ctx.globalAlpha = 1;
   // ligne d'impact
-  ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(0, hitY - 2, W, 2);
-  // clavier
+  ctx.globalAlpha = 0.5 + pulse * 0.5; ctx.fillStyle = beatBand; ctx.fillRect(0, hitY - 36, W, 36); ctx.globalAlpha = 1;
+  ctx.fillStyle = 'rgba(224,242,254,.75)'; ctx.fillRect(0, hitY - 2, W, 2);
+  // faisceaux et halos des touches actives
+  ctx.globalCompositeOperation = 'lighter';
+  for (let q = 0; q < 2; q++) for (const m of q ? G.blacks : G.whites) {
+    const gl = 1 - (now - G.kl[m]) / 300; if (!(gl > 0) && !pressed.has(m)) continue;
+    const r = G.keys.get(m), c = (HAND[G.kh[m]] || { b: '#22d3ee' }).b, k = pressed.has(m) ? 1 : gl;
+    ctx.globalAlpha = k * 0.3; ctx.drawImage(fadeSpr(c, true), r.x, hitY - 110, r.w, 110);
+    ctx.globalAlpha = k * 0.4; ctx.drawImage(glowSpr(c), r.x + r.w / 2 - r.w * 1.1, hitY - r.w * 1.1, r.w * 2.2, r.w * 2.2);
+  }
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  // clavier : touches qui s'enfoncent et s'illuminent
+  ctx.fillStyle = '#05060f'; ctx.fillRect(-6, hitY, W + 12, H - hitY + 4);
+  const hp = 0.55 + 0.3 * Math.sin(now * 0.008);
   for (const m of G.whites) {
-    const r = G.keys.get(m), p = pressed.has(m);
-    ctx.fillStyle = p ? '#a5f3fc' : hint.has(m) ? '#fde68a' : '#f4f4f8';
-    ctx.fillRect(r.x + 0.5, hitY, r.w - 1, G.kbH);
+    const r = G.keys.get(m), pr = pressed.has(m), k = pr ? 1 : Math.max(0, 1 - (now - G.kl[m]) / 300), dy = 3 * k;
+    ctx.fillStyle = kbW; rr(r.x + 0.5, hitY + dy, r.w - 1, G.kbH - dy, [0, 0, 5, 5]); ctx.fill();
+    if (k > 0) { ctx.globalAlpha = k * 0.5; ctx.fillStyle = (HAND[G.kh[m]] || { b: '#22d3ee' }).b; ctx.fillRect(r.x + 0.5, hitY + dy, r.w - 1, G.kbH - dy); ctx.globalAlpha = 1; }
+    else if (hintSet.has(m)) { ctx.globalAlpha = RM ? 0.8 : hp; ctx.fillStyle = '#fbbf24'; rr(r.x + 0.5, hitY, r.w - 1, G.kbH, [0, 0, 5, 5]); ctx.fill(); ctx.globalAlpha = 1; }
     if (settings.names && (r.w > 20 || m % 12 === 0)) {
-      ctx.fillStyle = '#64748b'; ctx.font = `${Math.min(11, r.w * 0.45)}px system-ui`; ctx.textAlign = 'center';
-      ctx.fillText(r.w > 20 ? NAMES[m % 12] : 'Do' + (Math.floor(m / 12) - 1), r.x + r.w / 2, H - 8);
+      ctx.fillStyle = '#64748b'; ctx.font = `${Math.min(11, r.w * 0.45) | 0}px system-ui`; ctx.textAlign = 'center';
+      ctx.fillText(r.w > 20 ? NAMES[m % 12] : 'Do' + (Math.floor(m / 12) - 1), r.x + r.w / 2, H - 8 + dy * 0.5);
     }
   }
   for (const m of G.blacks) {
-    const r = G.keys.get(m), p = pressed.has(m);
-    ctx.fillStyle = p ? '#22d3ee' : hint.has(m) ? '#f59e0b' : '#1c1c24';
-    rr(r.x, hitY, r.w, G.bkH, [0, 0, 4, 4]); ctx.fill();
+    const r = G.keys.get(m), pr = pressed.has(m), k = pr ? 1 : Math.max(0, 1 - (now - G.kl[m]) / 300), dy = 2 * k;
+    ctx.fillStyle = kbB; rr(r.x, hitY + dy, r.w, G.bkH - dy, [0, 0, 4, 4]); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.14)'; ctx.fillRect(r.x + r.w * 0.16, hitY + dy, r.w * 0.2, G.bkH * 0.78);
+    if (k > 0) { ctx.globalAlpha = k * 0.75; ctx.fillStyle = (HAND[G.kh[m]] || { b: '#22d3ee' }).b; rr(r.x, hitY + dy, r.w, G.bkH - dy, [0, 0, 4, 4]); ctx.fill(); ctx.globalAlpha = 1; }
+    else if (hintSet.has(m)) { ctx.globalAlpha = RM ? 0.8 : hp; ctx.fillStyle = '#f59e0b'; rr(r.x, hitY, r.w, G.bkH, [0, 0, 4, 4]); ctx.fill(); ctx.globalAlpha = 1; }
   }
-  // message flash
-  if (G.flash && now < G.flash.until) {
-    const a = Math.min(1, (G.flash.until - now) / 300);
-    ctx.globalAlpha = a; ctx.fillStyle = G.flash.color; ctx.font = '700 26px system-ui'; ctx.textAlign = 'center';
-    ctx.fillText(G.flash.text, W / 2, hitY - 24); ctx.globalAlpha = 1;
-  }
-  // flash rouge doux sur la colonne d'une fausse note
-  if (bad) {
-    const r = G.keys.get(bad.m);
-    if (r) { ctx.fillStyle = `rgba(248,113,113,${0.25 * (1 - (now - bad.t) / 350)})`; ctx.fillRect(r.x, 0, r.w, G.H); }
-  }
-  // anneaux et particules (600 ms)
+  ctx.fillStyle = kbShadow; ctx.fillRect(0, hitY, W, 12);
+  // colonne rouge doux sur fausse note / note ratée
+  if (bad) { const r = G.keys.get(bad.m); if (r) { ctx.globalAlpha = 0.28 * (1 - (now - bad.t) / 350); ctx.fillStyle = '#f87171'; ctx.fillRect(r.x, 0, r.w, hitY); ctx.globalAlpha = 1; } }
+  if (G.missFx && now - G.missFx.t < 400) { const r = G.keys.get(G.missFx.m); if (r) { ctx.globalAlpha = 0.2 * (1 - (now - G.missFx.t) / 400); ctx.fillStyle = '#f87171'; ctx.fillRect(r.x, 0, r.w, hitY); ctx.globalAlpha = 1; } }
+  // anneaux et étincelles (600 ms)
   for (let i = G.rings.length - 1; i >= 0; i--) {
     const p = G.rings[i], k = (now - p.t) / 600; if (k >= 1) { G.rings.splice(i, 1); continue; }
-    ctx.strokeStyle = `rgba(52,211,153,${1 - k})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(p.x, p.y, 8 + k * 34, 0, 7); ctx.stroke();
+    ctx.strokeStyle = p.c || '#34d399'; ctx.globalAlpha = 1 - k; ctx.lineWidth = 3 * (1 - k) + 1; ctx.beginPath(); ctx.arc(p.x, p.y, 8 + ease(k) * 40, 0, 7); ctx.stroke();
+    ctx.globalAlpha = (1 - k) * 0.5; ctx.beginPath(); ctx.arc(p.x, p.y, 4 + ease(k) * 22, 0, 7); ctx.stroke();
   }
+  ctx.globalCompositeOperation = 'lighter';
   for (let i = G.parts.length - 1; i >= 0; i--) {
     const p = G.parts[i], s = (now - p.t) / 1000, k = s / 0.6; if (k >= 1) { partPool.push(p); G.parts.splice(i, 1); continue; }
-    ctx.globalAlpha = 1 - k; ctx.fillStyle = p.c;
-    ctx.fillRect(p.x + p.vx * s, p.y + p.vy * s + 400 * s * s, 4, 4);
+    const z = 9 * (1 - k * 0.6); ctx.globalAlpha = 1 - k;
+    ctx.drawImage(glowSpr(p.c), p.x + p.vx * s - z / 2, p.y + p.vy * s + 400 * s * s - z / 2, z, z);
   }
-  ctx.globalAlpha = 1;
-  // compteur de combo : grossit tous les 5, paliers 10/25/50
-  if (G.streak >= 3 && G.mode !== 'demo') {
-    const tier = G.streak >= 50 ? 3 : G.streak >= 25 ? 2 : G.streak >= 10 ? 1 : 0;
-    const pop = RM ? 0 : Math.max(0, 1 - (now - G.pop) / 250) * 0.25;
-    const size = 20 + Math.min(G.streak, 50) / 5 * 3 + tier * 4;
-    ctx.fillStyle = ['#e2e8f0', '#fde68a', '#fbbf24', '#f59e0b'][tier];
-    ctx.font = `800 ${size * (1 + pop)}px system-ui`; ctx.textAlign = 'center';
-    ctx.fillText(`x${G.streak}`, W / 2, 80 + size / 2);
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  // retour visuel Parfait / Bien / Raté : texte qui monte, pop, halo et flash
+  ctx.lineJoin = 'round';
+  if (G.flash && now < G.flash.until) {
+    const f = G.flash, age = now - f.from, al = Math.min(1, (f.until - now) / 300);
+    const pop = RM ? 1 : 1 + 0.45 * Math.max(0, 1 - age / 180), y = hitY - 44 - (RM ? 0 : ease(Math.min(1, age / 450)) * 34);
+    if (!RM && age < 260) { ctx.globalAlpha = (1 - age / 260) * 0.4; ctx.globalCompositeOperation = 'lighter'; ctx.drawImage(glowSpr(f.color), 0, hitY - 90, W, 180); ctx.globalCompositeOperation = 'source-over'; }
+    ctx.globalAlpha = al; ctx.font = `800 ${(28 * pop) | 0}px system-ui`; ctx.textAlign = 'center';
+    ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(5,7,20,.85)'; ctx.strokeText(f.text, W / 2, y); ctx.fillStyle = f.color; ctx.fillText(f.text, W / 2, y); ctx.globalAlpha = 1;
   }
-  // décompte 3 2 1 (mode rythme)
-  const cd = G.mode === 'rhythm' ? Math.ceil(G.notes[0].s - G.t - 1e-6) : 0;
-  if (cd >= 1 && cd <= 3) {
-    ctx.globalAlpha = 0.85; ctx.fillStyle = '#fff'; ctx.font = '800 96px system-ui'; ctx.textAlign = 'center';
-    ctx.fillText(cd, W / 2, hitY / 2); ctx.globalAlpha = 1;
+  // compteur de combo : grossit tous les 5, paliers 10/25/50 (flammes aux deux derniers)
+  const tier = G.streak >= 50 ? 3 : G.streak >= 25 ? 2 : G.streak >= 10 ? 1 : 0;
+  if (tier > G.tier) G.tierT = now; G.tier = tier;
+  if (G.streak >= 3 && !demo) {
+    const pop = RM ? 0 : Math.max(0, 1 - (now - G.pop) / 250) * 0.25, size = 20 + Math.min(G.streak, 50) / 5 * 3 + tier * 4, cy = 84 + size / 2, tc = COMBOC[tier];
+    if (tier >= 2 && !RM) {
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 7; i++) {
+        const u = ((now * 0.0012 * (0.8 + (i % 3) * 0.25) + i * 0.37) % 1), fx = W / 2 + (i - 3) * size * 0.42 + Math.sin(now * 0.006 + i) * 4, fs = size * (0.9 + 0.5 * tier / 3) * (1 - u * 0.7);
+        ctx.globalAlpha = (1 - u) * 0.7; ctx.drawImage(glowSpr(i % 2 ? '#f97316' : tier === 3 ? '#fde047' : '#fb923c'), fx - fs / 2, cy - size * 0.2 - u * size * 1.4 - fs / 2, fs, fs);
+      }
+      ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+    }
+    ctx.globalAlpha = 0.18 + tier * 0.08; ctx.drawImage(glowSpr(tc), W / 2 - size * 2.4, cy - size * 1.5, size * 4.8, size * 3); ctx.globalAlpha = 1;
+    ctx.textAlign = 'center'; ctx.font = '700 11px system-ui'; ctx.fillStyle = 'rgba(203,213,225,.8)'; ctx.fillText('COMBO', W / 2, cy - size * 0.62);
+    ctx.font = `800 ${(size * (1 + pop)) | 0}px system-ui`; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(5,7,20,.8)'; ctx.strokeText(`x${G.streak}`, W / 2, cy + size * 0.35); ctx.fillStyle = tc; ctx.fillText(`x${G.streak}`, W / 2, cy + size * 0.35);
+    if (!RM && now - G.tierT < 600) { const k = (now - G.tierT) / 600; ctx.strokeStyle = tc; ctx.globalAlpha = 1 - k; ctx.lineWidth = 4 * (1 - k) + 1; ctx.beginPath(); ctx.arc(W / 2, cy, size + ease(k) * size * 3, 0, 7); ctx.stroke(); ctx.globalAlpha = 1; }
   }
+  // décompte 3 2 1 puis « Go ! »
+  const rem = G.notes[0].s - G.t, cd = Math.ceil(rem - 1e-6);
+  if (!demo && ((cd >= 1 && cd <= 3) || (G.mode === 'rhythm' && rem <= 0 && rem > -0.6))) {
+    const go = cd < 1, k = go ? -rem / 0.6 : cd - rem, txt = go ? 'Go !' : cd, sc = RM ? 1 : go ? 1 + k * 0.5 : 1.6 - 0.6 * ease(Math.min(1, k * 3)), cy = hitY * 0.45;
+    ctx.globalAlpha = go ? 1 - k : 1 - k * k; ctx.font = `800 ${(go ? 80 : 110) * sc | 0}px system-ui`; ctx.textAlign = 'center'; ctx.lineWidth = 8;
+    ctx.strokeStyle = 'rgba(5,7,20,.8)'; ctx.strokeText(txt, W / 2, cy); ctx.fillStyle = go ? '#34d399' : '#fff'; ctx.fillText(txt, W / 2, cy);
+    if (!RM) { ctx.strokeStyle = go ? '#34d399' : '#38bdf8'; ctx.lineWidth = 3; ctx.globalAlpha *= 0.6; ctx.beginPath(); ctx.arc(W / 2, cy - 36, 50 + ease(k) * 130, 0, 7); ctx.stroke(); }
+    ctx.globalAlpha = 1;
+  }
+  // progression du morceau : filet lumineux sur le bord droit
+  const pg = Math.max(0, Math.min(1, (G.t - G.notes[0].s + 3) / (G.end - G.notes[0].s + 3))), y0 = 60, y1 = hitY - 10, py = y0 + (y1 - y0) * pg;
+  ctx.fillStyle = 'rgba(165,180,252,.18)'; ctx.fillRect(W - 4, y0, 2, y1 - y0);
+  ctx.fillStyle = '#38bdf8'; ctx.fillRect(W - 4, y0, 2, py - y0); ctx.globalAlpha = 0.9; ctx.drawImage(glowSpr('#7dd3fc'), W - 15, py - 11, 22, 22); ctx.globalAlpha = 1;
   // HUD : DOM écrit seulement si la valeur change
   const hs = G.mode === 'demo' ? 'Démo' : `${G.hits}/${G.total}` + (G.streak > 2 ? ` · 🔥${G.streak}` : '');
-  const bw2 = Math.max(0, Math.min(100, (G.t - G.notes[0].s + 3) / (G.end - G.notes[0].s + 3) * 100)).toFixed(1) + '%';
+  const bw2 = (pg * 100).toFixed(1) + '%';
   if (G.hud[0] !== hs) $('#hudScore').textContent = G.hud[0] = hs;
   if (G.hud[1] !== bw2) $('#bar').style.width = G.hud[1] = bw2;
 }

@@ -1,4 +1,5 @@
 // Onglet « Entraîner » : accords (lettres américaines) en séries de 8 + accès à la lecture de notes.
+import { ic } from './ui.js';
 import { CHORDS, question, validate, schedule, isFast, session, unlocked, boxOf, mastered, dkey } from './chords.js';
 
 const KEY = 'sp.chords', XP_MAX_DAY = 40;
@@ -36,21 +37,21 @@ function beep(m) {
 function menu() {
   midiOff();
   const s = st(), u = unlocked(s), due = u.filter(c => s.cards[c.sym] && s.cards[c.sym].due <= Date.now()).length;
-  root.innerHTML = `<div class="card"><h2>🏋️ Entraîner</h2>
-    <p class="muted">${u.length}/${CHORDS.length} accords débloqués · ${mastered(s).length} maîtrisés · ${due} à réviser</p>
-    <div class="actions" style="flex-direction:column;gap:10px"><button class="primary" id="trChords">🎹 Accords (lettres)</button><button id="trRead">👀 Lecture de notes</button><button id="trEar">👂 Oreille</button></div></div>`;
+  root.innerHTML = `<div class="card"><h2>${ic('bolt', 24)} Entraîner</h2>
+    <p class="statpills"><span><b>${u.length}</b>/${CHORDS.length} accords débloqués</span><span><b>${mastered(s).length}</b> maîtrisés</span><span><b>${due}</b> à réviser</span></p>
+    <div class="tiles"><button class="tile t1" id="trChords"><span class="ti">${ic('keys', 26)}</span><span class="tt"><b>Accords</b><small>Retrouve les notes d'un accord (lettres)</small></span>${ic('play', 16, 'chev')}</button><button class="tile t2" id="trRead"><span class="ti">${ic('eye', 26)}</span><span class="tt"><b>Lecture de notes</b><small>Apprends à lire la portée, pas à pas</small></span>${ic('play', 16, 'chev')}</button><button class="tile t3" id="trEar"><span class="ti">${ic('ear', 26)}</span><span class="tt"><b>Oreille</b><small>Reconnais intervalles et rythmes</small></span>${ic('play', 16, 'chev')}</button></div></div>`;
   root.querySelector('#trChords').onclick = start;
   root.querySelector('#trRead').onclick = reading;
   root.querySelector('#trEar').onclick = ear;
 }
 function ear() {
-  root.innerHTML = '<button id="trBack">← Menu</button><div id="trEarBox" style="margin-top:10px"></div>';
+  root.innerHTML = `<button id="trBack" class="ghost">${ic('back', 18)} Menu</button><div id="trEarBox" style="margin-top:10px"></div>`;
   root.querySelector('#trBack').onclick = menu;
   const box = root.querySelector('#trEarBox');
   import('./ear.js').then(m => m.mount(box, S)).catch(() => { box.innerHTML = '<div class="card">Bientôt disponible.</div>'; });
 }
 function reading() {
-  root.innerHTML = '<button id="trBack">← Menu</button><div id="trReadBox" style="margin-top:10px"></div>';
+  root.innerHTML = `<button id="trBack" class="ghost">${ic('back', 18)} Menu</button><div id="trReadBox" style="margin-top:10px"></div>`;
   root.querySelector('#trBack').onclick = menu;
   const box = root.querySelector('#trReadBox');
   import('./reading.js').then(m => m.mount(box, S)).catch(() => { box.innerHTML = '<div class="card">Bientôt disponible.</div>'; });
@@ -66,13 +67,13 @@ function next() {
   // Web MIDI (si dispo) valide l'accord joué sur le vrai piano ; sinon / en repli : auto-évaluation.
   const recall = boxOf(st(), q.sym) >= 3;
   root.innerHTML = `<div class="card" style="text-align:center">
-    <div class="muted">Question ${run.i + 1} / ${run.qs.length}</div>
-    <div style="font-size:84px;font-weight:700;line-height:1.1">${esc(q.sym)}</div>
+    <div class="qtop"><span>Question ${run.i + 1} / ${run.qs.length}</span><span>${run.ok} juste${run.ok > 1 ? 's' : ''}</span></div><div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${run.qs.length}" aria-valuenow="${run.i}"><div style="width:${run.i / run.qs.length * 100}%"></div></div>
+    <div class="chord">${esc(q.sym)}</div>
     <div class="muted">${esc(q.name)}</div>
     <p id="trMsg" aria-live="polite" style="min-height:2.6em">${recall ? "Joue cet accord sur ton piano, sans clavier à l'écran." : "Touche les notes de l'accord."}</p>
     <div id="trKb" ${recall ? 'hidden' : ''}>${kbd()}</div>
     <div class="actions" id="trAct">${recall ? '<button class="primary" id="trPlayed">Je l\'ai joué</button>' : '<button id="trClr">Effacer</button><button class="primary" id="trOk">Valider</button>'}</div>
-    <p><button id="trQuit" style="font-size:13px">Quitter la série</button></p></div>`;
+    <p><button id="trQuit" class="ghost" style="min-height:44px;font-size:14px">Quitter la série</button></p></div>`;
   root.querySelector('#trQuit').onclick = menu;
   if (recall) {
     midiOn(held => {
@@ -153,8 +154,8 @@ function nextBtn(m) {
 }
 function recap() {
   const s = st(), m = mastered(s).map(c => c.sym), bad = [...new Set(run.bad)];
-  root.innerHTML = `<div class="card" style="text-align:center"><h2>Série terminée</h2>
-    <div style="font-size:48px;font-weight:700">${run.ok} / ${run.qs.length}</div>
+  root.innerHTML = `<div class="card" style="text-align:center"><h2 style="justify-content:center">Série terminée</h2>
+    <div class="score">${run.ok} / ${run.qs.length}</div>
     <p>+${run.xp} XP</p>
     <p>${m.length ? 'Accords maîtrisés : <b>' + m.map(esc).join(', ') + '</b>' : "Aucun accord maîtrisé pour l'instant : c'est normal, la répétition fait le travail."}</p>
     ${bad.length ? '<p class="muted">À retravailler : ' + bad.map(esc).join(', ') + '</p>' : ''}
