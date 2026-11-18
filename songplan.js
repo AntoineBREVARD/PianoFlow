@@ -231,6 +231,14 @@ function schedule(an, o) {
           tasks.push({ type: 'fullrun', sectionId: 'all', hands: 'both', speed: targetSpeed, reps: 1, goal: { accuracy: .85, speed: targetSpeed }, why: WHY.fullrun, minutes: m });
         } else break;
       }
+      // reste de budget : révision (jamais de nouveau contenu) des passages déjà travaillés, le moins vus aujourd'hui d'abord
+      while (tasks.length && rem >= minBlk - 1e-9 && tasks.length < MAX_BLOCKS) {
+        const cand = st.filter(s => s.idx > 0 || s.m >= MASTER).sort((a, b) => tasks.filter(t => t.sectionId === a.sec.id).length - tasks.filter(t => t.sectionId === b.sec.id).length)[0];
+        if (!cand) break;
+        const m = r05(Math.min(rem, blockMax(bars(cand.sec), bpm, targetSpeed), Math.max(rvMin(cand.sec), minBlk)));
+        if (m < minBlk - 1e-9) break;
+        tasks.push({ ...mkTask('review', cand.sec, cand.sec.features.hands, targetSpeed, m, .85, bpm), filler: true }); rem -= m;
+      }
     }
     const L = tasks.at(-1); // dernier bloc trop court : on le prolonge si le budget le permet, sinon on le fusionne (ou on lui cède du temps) avec le précédent
     if (L && L.minutes < minBlk - 1e-9) {
@@ -378,6 +386,6 @@ export function eta(plan, progress = {}, now, skill) {
   const o = { ...optsOf(plan, { now, progress, skill }), noMargin: true }; o.dlN = o.nowN + 730;
   const sc = schedule(plan.analysis, o), uniq = plan.analysis.sections.filter(s => !s.dupOf);
   const mastered = uniq.filter(s => (progress[s.id]?.mastery ?? 0) >= MASTER).length;
-  const date = sc.leftover ? null : sc.sessions.at(-1)?.date ?? iso(o.nowN);
+  const date = sc.leftover ? null : sc.sessions.filter(s => s.tasks.some(t => !t.filler)).at(-1)?.date ?? iso(o.nowN);
   return { date, onTime: !!date && toNum(date) < toNum(plan.deadline), mastered, total: uniq.length, remainingMinutes: Math.round(sc.required.total), pct: uniq.length ? Math.round(100 * mastered / uniq.length) : 100 };
 }
