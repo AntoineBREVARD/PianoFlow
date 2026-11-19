@@ -3,6 +3,7 @@ import { DEMOS, compose } from './songs.js';
 import * as learn from './learn.js';
 import * as mic from './mic.js';
 import { shareBlob } from './share.js';
+import { initBack } from './back.js';
 import { createSynth } from './synth.js';
 import * as accomp from './accomp.js';
 
@@ -830,3 +831,5 @@ if (/[?&]debug=1/.test(location.search) || ['localhost', '127.0.0.1'].includes(
   });
   const hs = document.getElementById('hudScore'); if (hs) hs.setAttribute('aria-live', 'polite');
 }
+
+initBack(); // bouton Retour : ferme les écrans au lieu de quitter l'appli
