@@ -293,10 +293,17 @@ function renderCourse() {
 function startLesson(l, ok) {
   if (!ok) { modal('<h2>Leçon verrouillée</h2><p>Réussis d\'abord la leçon précédente (au moins ★).</p><div class="actions"><button class="primary" id="mOk">OK</button></div>'); $('#mOk').onclick = closeModal; return; }
   const b = modal(`<h2></h2><p></p><p class="hint">Mode : ${l.mode === 'rhythm' ? 'rythme — joue en suivant le tempo' : 'pas à pas — le morceau t\'attend'}. Les chiffres sur les notes sont les doigts à utiliser (1 = pouce).</p>
+    <div class="vseg" role="radiogroup" aria-label="Vue de jeu">
+      <button type="button" role="radio" data-v="keys"><b>Touches qui tombent</b><small>facile, comme Piano Tiles</small></button>
+      <button type="button" role="radio" data-v="score"><b>Partition qui défile</b><small>vraie portée, comme Simply Piano</small></button>
+    </div>
     <div class="actions"><button class="ghost" id="mNo">Annuler</button><button class="primary" id="mGo">Commencer</button></div>`);
   b.querySelector('h2').textContent = l.title; b.querySelector('p').textContent = l.intro;
+  let view = H.getView?.() === 'score' ? 'score' : 'keys';
+  const paint = () => b.querySelectorAll('.vseg button').forEach(x => { const on = x.dataset.v === view; x.classList.toggle('on', on); x.setAttribute('aria-checked', on); });
+  b.querySelectorAll('.vseg button').forEach(x => x.onclick = () => { view = x.dataset.v; H.setView?.(view); paint(); }); paint();
   $('#mNo').onclick = closeModal;
-  $('#mGo').onclick = () => { closeModal(); H.begin(l.song, { mode: l.mode || 'wait', hands: 'both', speed: l.speed || 1, label: l.title, onDone: s => lessonDone(l, s) }); };
+  $('#mGo').onclick = () => { closeModal(); H.begin(l.song, { mode: l.mode || 'wait', hands: 'both', speed: l.speed || 1, view, label: l.title, onDone: s => lessonDone(l, s) }); };
 }
 function lessonDone(l, s) {
   const was = done(l);
