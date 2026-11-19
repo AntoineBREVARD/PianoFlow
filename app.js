@@ -821,7 +821,7 @@ $('#resume').onclick = () => { G.paused = false; startAccomp(G.notes, G.song); G
 $('#quit').onclick = () => { learn.onTime(G.secs); learn.refresh(); G.mode = 'demo'; G.paused = false; $('#pause').hidden = true; G.t = Infinity; $('#home').hidden = false; $('#game').hidden = true; stopAccomp(); G = null; stopMic(); stopAuto(); endRec(false); held.forEach(v => v.off()); held.clear(); pressed.clear(); };
 
 renderHome();
-learn.init({ store, begin });
+learn.init({ store, begin, getView: () => settings.view, setView: v => { settings.view = v === 'score' ? 'score' : 'keys'; store.set('sp.settings', settings); } });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
 if (/[?&]debug=1/.test(location.search) || ['localhost', '127.0.0.1'].includes(location.hostname)) window.__sp = { get G() { return G; }, draw: () => G && draw(), setLat(v) { micLat = +v; store.set('sp.micLat', micLat); }, press, startGame, settings, library: () => library };
 

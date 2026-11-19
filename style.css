@@ -330,3 +330,7 @@ li .info{flex:1;min-width:0}li b{display:block;overflow:hidden;text-overflow:ell
 #goalsBox:empty,#goalsHere:empty{display:none}
 #result .sheet h2,#pause .sheet h2{justify-content:center}
 @media (max-width:559px){#goalsBox .actions{justify-content:stretch}#goalsBox .actions button{flex:1 1 140px}}
+.vseg{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0 4px}
+.vseg button{display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:left;padding:12px;min-height:64px;border-radius:var(--r-md,14px);border:2px solid var(--line);background:var(--card);color:var(--fg)}
+.vseg button b{font-size:15px}.vseg button small{color:var(--mut);font-size:12.5px;line-height:1.25}
+.vseg button.on{border-color:var(--acc,#38bdf8);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc,#38bdf8) 25%,transparent)}
