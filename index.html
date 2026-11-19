@@ -62,6 +62,12 @@
 <section id="setup" hidden role="dialog" aria-modal="true" aria-label="Préparer le morceau">
   <div class="sheet">
     <h2 id="setupTitle"></h2>
+    <label>Vue
+      <select id="s_view">
+        <option value="keys">Touches qui tombent — facile</option>
+        <option value="score">Partition qui défile — vraie portée</option>
+      </select>
+    </label>
     <label>Mode
       <select id="s_mode">
         <option value="wait">Pas à pas — le morceau attend que tu joues la bonne note</option>
@@ -90,6 +96,12 @@
 <section id="prefs" hidden role="dialog" aria-modal="true" aria-label="Réglages">
   <div class="sheet">
     <h2><svg class="ic" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg> Réglages</h2>
+    <label>Vue du morceau
+      <select id="p_view">
+        <option value="keys">Touches qui tombent — facile</option>
+        <option value="score">Partition qui défile — vraie portée</option>
+      </select>
+    </label>
     <label>Comment tu joues
       <select id="p_input">
         <option value="touch">Écran tactile</option>

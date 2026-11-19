@@ -6,6 +6,7 @@ import { shareBlob } from './share.js';
 import { initBack } from './back.js';
 import { createSynth } from './synth.js';
 import * as accomp from './accomp.js';
+import * as score from './score.js';
 
 const $ = s => document.querySelector(s);
 const NAMES = ['Do', 'Do#', 'Ré', 'Ré#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'];
@@ -58,7 +59,8 @@ function voiceOn(m, vel = 0.85) {
 }
 
 /* ============================ État ============================ */
-const settings = Object.assign({ mode: 'wait', hands: 'both', speed: 1, names: true, input: 'touch', metro: false, recall: false, piano: true, accomp: false, rec: false }, store.get('sp.settings', {}));
+const settings = Object.assign({ mode: 'wait', hands: 'both', speed: 1, names: true, input: 'touch', metro: false, recall: false, piano: true, accomp: false, rec: false, view: 'keys' }, store.get('sp.settings', {}));
+if (settings.view !== 'score') settings.view = 'keys';
 let library = store.get('sp.library', []);
 let G = null;            // partie en cours
 const pressed = new Map(); // midi -> expiration (ms) pour l'affichage
@@ -148,17 +150,17 @@ function refreshPrefs() {
 $('#p_input').addEventListener('change', refreshPrefs);
 $('#tabPrefs').onclick = () => $('#prefsBtn').onclick();
 $('#prefsBtn').onclick = () => {
-  $('#p_input').value = settings.input; $('#p_names').checked = settings.names; $('#p_metro').checked = settings.metro; $('#p_recall').checked = settings.recall; $('#p_piano').checked = settings.piano !== false; $('#p_accomp').checked = !!settings.accomp; refreshPrefs();
+  $('#p_input').value = settings.input; $('#p_view').value = settings.view; $('#p_names').checked = settings.names; $('#p_metro').checked = settings.metro; $('#p_recall').checked = settings.recall; $('#p_piano').checked = settings.piano !== false; $('#p_accomp').checked = !!settings.accomp; refreshPrefs();
   $('#p_lat').value = micLat; $('#p_latVal').textContent = Math.round(micLat * 1000) + ' ms';
   $('#p_recal').textContent = 'Recalibrer le micro'; $('#prefs').hidden = false;
 };
 $('#p_lat').oninput = e => { micLat = +e.target.value; $('#p_latVal').textContent = Math.round(micLat * 1000) + ' ms'; store.set('sp.micLat', micLat); };
 $('#p_recal').onclick = () => { store.set('sp.micFloor', null); $('#p_recal').textContent = 'Recalibrage au prochain lancement ✓'; };
-$('#p_close').onclick = () => { settings.input = $('#p_input').value; settings.names = $('#p_names').checked; settings.metro = $('#p_metro').checked; settings.recall = $('#p_recall').checked; settings.piano = $('#p_piano').checked; settings.accomp = $('#p_accomp').checked && settings.input !== 'mic'; if (settings.input === 'mic') settings.rec = false; store.set('sp.settings', settings); $('#prefs').hidden = true; };
+$('#p_close').onclick = () => { settings.input = $('#p_input').value; settings.view = $('#p_view').value; settings.names = $('#p_names').checked; settings.metro = $('#p_metro').checked; settings.recall = $('#p_recall').checked; settings.piano = $('#p_piano').checked; settings.accomp = $('#p_accomp').checked && settings.input !== 'mic'; if (settings.input === 'mic') settings.rec = false; store.set('sp.settings', settings); $('#prefs').hidden = true; };
 let setupSong = null;
 function openSetup(song) {
   setupSong = song; $('#setupTitle').textContent = song.title;
-  for (const k of ['mode', 'hands', 'input']) $('#s_' + k).value = settings[k];
+  for (const k of ['view', 'mode', 'hands', 'input']) $('#s_' + k).value = settings[k];
   $('#s_speed').value = settings.speed; $('#speedVal').textContent = Math.round(settings.speed * 100) + ' %';
   $('#s_names').checked = settings.names;
   $('#setup').hidden = false;
@@ -167,7 +169,7 @@ $('#s_speed').oninput = e => { $('#speedVal').textContent = Math.round(e.target.
 $('#setupCancel').onclick = () => { $('#setup').hidden = true; };
 $('#setupGuided').onclick = () => { $('#setup').hidden = true; learn.guided(setupSong); };
 $('#setupGo').onclick = async () => {
-  for (const k of ['mode', 'hands', 'input']) settings[k] = $('#s_' + k).value;
+  for (const k of ['view', 'mode', 'hands', 'input']) settings[k] = $('#s_' + k).value;
   settings.speed = +$('#s_speed').value; settings.names = $('#s_names').checked;
   store.set('sp.settings', settings);
   $('#setup').hidden = true;
@@ -271,7 +273,8 @@ function expectedNow() {
 
 /* ============================ Jeu ============================ */
 function startGame(song, warning, opts = {}) {
-  const o = { mode: settings.mode, hands: settings.hands, speed: settings.speed, ...opts };
+  const o = { mode: settings.mode, hands: settings.hands, speed: settings.speed, view: settings.view, ...opts };
+  o.view = o.view === 'score' ? 'score' : 'keys';
   let src = song.notes;
   if (o.from != null) { src = src.filter(n => n[1] >= o.from - 1e-6 && n[1] < o.to - 1e-6); if (!src.length) src = song.notes; }
   if (o.zones) { const z = src.filter(n => o.zones.some(([a, b]) => n[1] >= a - 1e-6 && n[1] < b - 1e-6)); if (z.length) src = z; } // hors zone : retirées (muettes, non requises) ; le départ saute à la 1re zone
@@ -284,8 +287,9 @@ function startGame(song, warning, opts = {}) {
   while (hi - lo < 23) { if (hi < 108) hi++; if (hi - lo < 23 && lo > 21) lo--; }
   while (isBlack(lo)) lo--; while (isBlack(hi)) hi++;
   const req = notes.filter(n => n.req);
+  const scp = o.view === 'score' ? score.prepare(notes) : null;
   G = {
-    song, notes, req, lo, hi, mode: o.mode, sp: o.speed, opts: o, secs: 0,
+    song, notes, req, view: o.view, stv: scp?.stv, sc: scp?.sc, lo, hi, mode: o.mode, sp: o.speed, opts: o, secs: 0,
     t: notes[0].s - 3, gi: 0, mi: 0, ai: 0, end: notes.reduce((a, n) => Math.max(a, n.s + n.d), 0),
     maxD: notes.reduce((a, n) => Math.max(a, n.d), 0), total: req.length, hits: 0, wrong: 0, pw: 0, wl: [], missed: 0, streak: 0, best: 0, parts: [], rings: [], bad: null, pop: 0, hud: ['', ''], paused: false, last: performance.now(), beat: Math.floor(notes[0].s - 3) - 1, lastAct: performance.now(), flash: null, mic: settings.input === 'mic', kl: new Float64Array(128).fill(-1e9), kh: new Array(128).fill(null), tier: 0, tierT: 0, missT: 0, missFx: null, pT: 0, pm: 1,
   };
@@ -579,6 +583,7 @@ function resize() {
   G.whites.forEach((m, i) => G.keys.set(m, { x: i * ww, w: ww }));
   for (const m of G.blacks) { const lw = G.keys.get(m - 1); G.keys.set(m, { x: lw.x + lw.w - bw / 2, w: bw }); }
   G.ppb = G.hitY / 6;
+  if (G.view === 'score') G.sg = score.geometry(W, G.hitY, G.stv.length);
 }
 addEventListener('resize', resize);
 
@@ -609,8 +614,9 @@ const DUST = new Float32Array(40 * 4); for (let i = 0; i < 40; i++) { DUST[i * 4
 
 let bgc = null, bgKey = '', gBase = '', kbW, kbB, kbShadow, beatBand;
 const hintSet = new Set();
+const E = { HAND, HITC, MISSC, GHOSTC, FING, NAMES, hintSet, glow: glowSpr, now: 0, pulse: 0, names: true, recall: false, RM }; // contexte réutilisé par la vue partition
 function layers() {
-  const { W, H, hitY } = G, key = `${W}x${H}|${hitY}|${dpr}|${G.lo}-${G.hi}`;
+  const { W, H, hitY } = G, key = `${W}x${H}|${hitY}|${dpr}|${G.lo}-${G.hi}|${G.view}`;
   if (key === bgKey) return; bgKey = key;
   // fond + lignes de touches pré-rendus une fois
   bgc = bgc || document.createElement('canvas'); bgc.width = Math.ceil(W * dpr); bgc.height = Math.ceil(hitY * dpr);
@@ -618,9 +624,12 @@ function layers() {
   let gr = g.createLinearGradient(0, 0, 0, hitY); gr.addColorStop(0, '#080a1c'); gr.addColorStop(1, '#171b3d'); g.fillStyle = gr; g.fillRect(0, 0, W, hitY);
   gr = g.createRadialGradient(W * 0.2, hitY * 0.3, 0, W * 0.2, hitY * 0.3, W * 0.8); gr.addColorStop(0, 'rgba(99,102,241,.18)'); gr.addColorStop(1, 'rgba(99,102,241,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, hitY);
   gr = g.createRadialGradient(W * 0.85, hitY * 0.65, 0, W * 0.85, hitY * 0.65, W * 0.7); gr.addColorStop(0, 'rgba(14,165,233,.14)'); gr.addColorStop(1, 'rgba(14,165,233,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, hitY);
+  if (G.view === 'score') score.drawBg(g, G.sg, G.stv);
+  else {
   g.fillStyle = 'rgba(0,0,0,.11)'; for (const m of G.blacks) { const r = G.keys.get(m); g.fillRect(r.x, 0, r.w, hitY); }
   g.lineWidth = 1;
   for (const m of G.whites) { const r = G.keys.get(m); g.strokeStyle = m % 12 === 0 ? 'rgba(255,255,255,.2)' : 'rgba(255,255,255,.06)'; g.beginPath(); g.moveTo(r.x, 0); g.lineTo(r.x, hitY); g.stroke(); }
+  }
   gr = g.createLinearGradient(0, 0, 0, 90); gr.addColorStop(0, 'rgba(8,10,28,.7)'); gr.addColorStop(1, 'rgba(8,10,28,0)'); g.fillStyle = gr; g.fillRect(0, 0, W, 90);
   // dégradés du clavier et de la ligne d'impact (coordonnées absolues, partagés par toutes les touches)
   const kb = G.kbH, bk = G.bkH;
@@ -634,7 +643,7 @@ function layers() {
 function draw() {
   const { W, H, hitY, ppb } = G, now = performance.now();
   layers();
-  const bt = Math.max(G.bad ? G.bad.t : 0, G.missT), bad = G.bad && now - G.bad.t < 350 ? G.bad : null;
+  const demo = G.mode === 'demo', SC = G.view === 'score', bt = Math.max(G.bad ? G.bad.t : 0, G.missT), bad = G.bad && now - G.bad.t < 350 ? G.bad : null;
   const shk = !RM && now - bt < 350 ? Math.sin(now * 0.12) * 3 * (1 - (now - bt) / 350) : 0;
   ctx.setTransform(dpr, 0, 0, dpr, shk * dpr, 0);
   ctx.fillStyle = '#080a1c'; ctx.fillRect(-6, 0, W + 12, H);
@@ -642,6 +651,10 @@ function draw() {
   // pulsation sur le tempo (se fige quand le jeu attend la bonne touche)
   const mv = G.t !== G.pT; G.pT = G.t; G.pm += ((mv ? 1 : 0) - G.pm) * 0.08;
   const ph = G.t - Math.floor(G.t), pulse = RM ? 0.25 : 0.2 + (1 - ph) ** 3 * 0.8 * G.pm;
+  hintSet.clear();
+  if (!settings.recall || now - G.lastAct > 3000 || G.bad && now - G.bad.t < 3000) for (const n of expectedNow()) hintSet.add(n.m);
+  if (SC) { E.now = now; E.pulse = pulse; E.names = settings.names; E.recall = settings.recall; score.drawScore(ctx, G, E); }
+  else {
   ctx.globalAlpha = 0.12 + pulse * 0.2; ctx.drawImage(glowSpr('#38bdf8'), -W * 0.2, hitY - 180, W * 1.4, 360); ctx.globalAlpha = 1;
   // poussière d'étoiles (parallaxe)
   ctx.fillStyle = '#c7d2fe';
@@ -659,10 +672,8 @@ function draw() {
   }
   // notes qui tombent
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, hitY); ctx.clip();
-  hintSet.clear();
-  if (!settings.recall || now - G.lastAct > 3000 || G.bad && now - G.bad.t < 3000) for (const n of expectedNow()) hintSet.add(n.m);
   // fenêtre visible : notes triées par début ; départ par dichotomie (s >= t - maxD), arrêt dès qu'une note est au-dessus de l'écran
-  const NS = G.notes, tMax = G.t + (hitY + 4) / ppb, demo = G.mode === 'demo';
+  const NS = G.notes, tMax = G.t + (hitY + 4) / ppb;
   let a = 0, b = NS.length; for (const lim = G.t - G.maxD; a < b;) { const mid = (a + b) >> 1; if (NS[mid].s < lim) a = mid + 1; else b = mid; }
   for (let i = a; i < NS.length; i++) {
     const n = NS[i]; if (n.s > tMax) break;
@@ -701,6 +712,7 @@ function draw() {
   // ligne d'impact
   ctx.globalAlpha = 0.5 + pulse * 0.5; ctx.fillStyle = beatBand; ctx.fillRect(0, hitY - 36, W, 36); ctx.globalAlpha = 1;
   ctx.fillStyle = 'rgba(224,242,254,.75)'; ctx.fillRect(0, hitY - 2, W, 2);
+  }
   // faisceaux et halos des touches actives
   ctx.globalCompositeOperation = 'lighter';
   for (let q = 0; q < 2; q++) for (const m of q ? G.blacks : G.whites) {
@@ -732,8 +744,8 @@ function draw() {
   }
   ctx.fillStyle = kbShadow; ctx.fillRect(0, hitY, W, 12);
   // colonne rouge doux sur fausse note / note ratée
-  if (bad) { const r = G.keys.get(bad.m); if (r) { ctx.globalAlpha = 0.28 * (1 - (now - bad.t) / 350); ctx.fillStyle = '#f87171'; ctx.fillRect(r.x, 0, r.w, hitY); ctx.globalAlpha = 1; } }
-  if (G.missFx && now - G.missFx.t < 400) { const r = G.keys.get(G.missFx.m); if (r) { ctx.globalAlpha = 0.2 * (1 - (now - G.missFx.t) / 400); ctx.fillStyle = '#f87171'; ctx.fillRect(r.x, 0, r.w, hitY); ctx.globalAlpha = 1; } }
+  if (bad) { const r = G.keys.get(bad.m); if (r) { ctx.globalAlpha = 0.28 * (1 - (now - bad.t) / 350); ctx.fillStyle = '#f87171'; ctx.fillRect(r.x, SC ? hitY : 0, r.w, SC ? G.kbH : hitY); ctx.globalAlpha = 1; } }
+  if (G.missFx && now - G.missFx.t < 400) { const r = G.keys.get(G.missFx.m); if (r) { ctx.globalAlpha = 0.2 * (1 - (now - G.missFx.t) / 400); ctx.fillStyle = '#f87171'; ctx.fillRect(r.x, SC ? hitY : 0, r.w, SC ? G.kbH : hitY); ctx.globalAlpha = 1; } }
   // anneaux et étincelles (600 ms)
   for (let i = G.rings.length - 1; i >= 0; i--) {
     const p = G.rings[i], k = (now - p.t) / 600; if (k >= 1) { G.rings.splice(i, 1); continue; }
@@ -811,7 +823,7 @@ $('#quit').onclick = () => { learn.onTime(G.secs); learn.refresh(); G.mode = 'de
 renderHome();
 learn.init({ store, begin });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
-if (/[?&]debug=1/.test(location.search) || ['localhost', '127.0.0.1'].includes(location.hostname)) window.__sp = { get G() { return G; }, setLat(v) { micLat = +v; store.set('sp.micLat', micLat); }, press, startGame, settings, library: () => library };
+if (/[?&]debug=1/.test(location.search) || ['localhost', '127.0.0.1'].includes(location.hostname)) window.__sp = { get G() { return G; }, draw: () => G && draw(), setLat(v) { micLat = +v; store.set('sp.micLat', micLat); }, press, startGame, settings, library: () => library };
 
 /* Panneaux : Échap ferme, focus initial puis restitué à l'élément déclencheur */
 {
