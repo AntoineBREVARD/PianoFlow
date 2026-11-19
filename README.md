@@ -24,7 +24,7 @@ Dans « Mes morceaux », le bouton **🎯 Objectif** crée un programme pour app
 - **Limites** : toutes les formules (difficulté, temps estimé, seuils de maîtrise, modèle de niveau) sont des **heuristiques non validées sur de vrais élèves** ; seule la cohérence interne est testée (`test-skill.mjs`, `test-songplan.mjs`, `test-goals.mjs`). Un seul programme actif par morceau ; données locales à l'appareil (pas de synchronisation, pas de classement entre joueurs).
 
 ## Installer l'APK Android
-GitHub → onglet **Actions** → workflow **« Build PianoFlow APK »** → dernier run réussi → artefact **`PianoFlow-apk`** (zip contenant `app-debug.apk`). Dézippe, copie sur le téléphone, autorise l'installation de sources inconnues. C'est un APK de debug (non signé pour le Play Store).
+GitHub → onglet **Actions** → workflow **« Build PianoFlow APK »** → dernier run réussi → artefact **`PianoFlow-apk`** (zip contenant `app-debug.apk`). Dézippe, copie sur le téléphone, autorise l'installation de sources inconnues. C'est un APK de debug, signé avec la clé de debug fixe du dépôt : chaque nouvelle version s'installe par-dessus la précédente (la toute première fois depuis une ancienne version, il faut désinstaller). Non adapté au Play Store.
 
 ## Lancer en local
 ```
@@ -46,12 +46,9 @@ puis http://localhost:8123. Le micro et l'installation PWA sur téléphone deman
 
 ## Tests
 ```
-node test.mjs
-node test-reading.mjs
-node test-ear.mjs
-node test-stats.mjs
+node run-tests.mjs
 ```
-(ou `for f in test*.mjs; do node $f; done`). Sans dépendance.
+Lance les 13 fichiers `test*.mjs` (analyse de morceaux, niveau du joueur, programme, partage, micro, etc.). Sans dépendance. Le workflow APK les exécute avant de compiler.
 
 ## Limites connues
 - Le micro est **monophonique** : fiable pour une note à la fois, pas pour les accords.
